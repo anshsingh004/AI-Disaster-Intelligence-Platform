@@ -87,20 +87,25 @@ The repository is organized cleanly by domain boundaries:
 │   ├── requirements.txt    # API dependency definitions
 │   ├── .env.example        # Environment settings template
 │   ├── .env                # Local secrets configuration
+│   ├── tests/
+│   │   └── test_auth.py    # Zero-dependency auth tests
 │   └── app/
 │       ├── main.py         # FastAPI lifespan bootloader and app assembly
 │       ├── db.py           # Engine pool and connection retry logic
 │       ├── db_seeder.py    # Automated database seeder
+│       ├── dependencies.py # Context dependencies (auth & RBAC check)
 │       ├── core/           # Core cross-cutting modules
 │       │   ├── config.py   # Settings validation
 │       │   ├── logging.py  # Structured logger configurations
 │       │   ├── response.py # JSON response envelopes
-│       │   └── exceptions.py # Global handlers
-│       ├── models/         # SQLAlchemy models (disaster, alert, report)
+│       │   ├── exceptions.py # Global handlers
+│       │   ├── rate_limit.py # Sliding-window rate limiter
+│       │   └── security.py # Password hash and JWT utils
+│       ├── models/         # SQLAlchemy models (disaster, alert, report, user, audit_log)
 │       ├── schemas/        # Validation schemas
-│       ├── repositories/   # Base and entity repositories (disaster_repository)
+│       ├── repositories/   # Entity repositories (disaster_repository, user_repository)
 │       ├── services/       # Core business logic handlers
-│       └── routers/        # FastAPI endpoint controllers
+│       └── routers/        # FastAPI endpoint controllers (disaster, auth, health)
 └── frontend/
     ├── Dockerfile          # Nginx-based React production build
     ├── package.json        # Node modules and scripts
@@ -141,6 +146,30 @@ The repository is organized cleanly by domain boundaries:
    - `status` (String, Indexed)
    - `summary` (String, Nullable)
    - `created_at` (DateTime, Indexed)
+4. **users Table:**
+   - `id` (Integer, Primary Key)
+   - `name` (String)
+   - `email` (String, Unique, Indexed)
+   - `hashed_password` (String)
+   - `role` (String, Default="ANALYST", Indexed)
+   - `clearance_level` (String, Default="Alpha")
+   - `is_active` (Boolean, Default=True)
+   - `is_verified` (Boolean, Default=False)
+   - `verification_token` (String, Indexed, Nullable)
+   - `password_reset_token` (String, Indexed, Nullable)
+   - `failed_login_attempts` (Integer, Default=0)
+   - `lockout_until` (DateTime, Nullable)
+   - `current_refresh_token` (String, Nullable)
+   - `created_at` (DateTime, Indexed)
+   - `updated_at` (DateTime)
+5. **audit_logs Table:**
+   - `id` (Integer, Primary Key)
+   - `user_email` (String, Indexed)
+   - `action` (String, Indexed)
+   - `entity_type` (String, Nullable)
+   - `entity_id` (Integer, Nullable)
+   - `ip_address` (String, Nullable)
+   - `created_at` (DateTime, Indexed)
 
 ### Transaction Check Constraints
 Integrity constraints are enforced at the database layer via SQLAlchemy check constraints:
@@ -154,6 +183,8 @@ Integrity constraints are enforced at the database layer via SQLAlchemy check co
 - `check_alert_level_values`: `level IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')`
 - `check_report_risk_values`: `risk IN ('low', 'medium', 'high', 'critical')`
 - `check_report_status_values`: `status IN ('active', 'monitoring', 'resolved')`
+- `check_user_roles`: `role IN ('ANALYST', 'EOC_LEAD', 'ADMINISTRATOR')`
+- `check_clearance_levels`: `clearance_level IN ('Alpha', 'Beta', 'Omega')`
 
 ### Connection Pooling & Resiliency
 - Managed via `QueuePool` with parameters: `pool_size=10`, `max_overflow=20`, `pool_recycle=1800`, `pool_pre_ping=True`.
@@ -190,8 +221,14 @@ Global handlers catch `HTTPException`, validation errors (`RequestValidationErro
 ---
 
 ## 8. Authentication Strategy
-- *Pending Implementation*
-- **Planned Target:** Enforce token authentication checks on `/api/v1` routers using Supabase Auth JWT validation. The API server will parse and verify JWT signatures without local password storage.
+The authentication layer enforces secure token-based user sessions:
+- **JWT Architecture:** HS256-signed JSON Web Tokens. Access tokens expire in 15 minutes; refresh tokens expire in 7 days.
+- **Secure Cookie Transports:** Access and refresh tokens are written to client responses as secure, HTTP-only, `SameSite=lax` cookies.
+- **Refresh Token Rotation (RTR):** Refreshes emit a new refresh token. Reusing an old refresh token is detected as a session compromise, which immediately revokes all active refresh tokens for the user, forcing a complete re-login.
+- **Account Lockout:** Tracks failed sign-in attempts. Recording 5 consecutive failed login attempts locks the user account for 15 minutes.
+- **Lockout Release:** Successful verification and password reset immediately resets failed attempt counters to 0 and clears lock timestamps.
+- **Role-Based Access Control (RBAC):** Restricts versioned routers using the `RequireRole` dependency check (evaluates `ANALYST`, `EOC_LEAD`, or `ADMINISTRATOR` access credentials).
+- **Audit Logging:** Logs key authentication and verification actions to the `audit_logs` table.
 
 ---
 
@@ -217,7 +254,7 @@ Services run in isolated Docker containers linked via docker-compose networking:
 
 ## 12. Deployment Strategy
 - **Local Dev:** Launched via `docker-compose up --build` or manual python execution.
-- **Production Target:** Backend deployed on Render, frontend hosted on Vercel, and database hosted on Supabase Postgres.
+- **Production Target:** Deployed on Render (backend), hosted on Vercel (frontend), and database hosted on Supabase Postgres.
 
 ---
 
@@ -226,6 +263,8 @@ Defined in `.env` and settings configurations:
 - `ENV` (e.g. `development`, `production`)
 - `LOG_LEVEL` (e.g. `INFO`, `WARNING`)
 - `DATABASE_URL` (SQLAlchemy postgresql connection string)
+- `JWT_SECRET_KEY` (Access token signing secret)
+- `JWT_REFRESH_SECRET_KEY` (Refresh token signing secret)
 
 ---
 
@@ -239,35 +278,36 @@ Defined in `.env` and settings configurations:
 ## 15. Current Limitations
 - AI module is limited to a deterministic rules engine proxy.
 - Frontend dashboard metrics represent static local arrays, not linked to APIs.
-- Authentication validation and background task queuing are pending setup.
+- Background task queuing is pending setup.
 
 ---
 
 ## 16. Future Roadmap
 - **Phase 1:** Core Production Infrastructure Upgrade (Completed).
 - **Phase 2:** Persistence Layer Optimization & Normalization (Completed).
-- **Phase 3:** API integration with frontend templates and real-time weather polling.
-- **Phase 4:** RAG compilation framework (ChromaDB + Gemini).
-- **Phase 5:** Model serving pipeline (ONNX Runtime).
+- **Phase 3:** Production-Grade Authentication & Access Controls (Completed).
+- **Phase 4:** API integration with frontend templates and real-time weather polling.
+- **Phase 5:** RAG compilation framework (ChromaDB + Gemini).
+- **Phase 6:** Model serving pipeline (ONNX Runtime).
 
 ---
 
 ## 17. Decisions Made
-- **Database Normalization:** Split database schema to introduce related `alerts` and `reports` entities linked to `disasters` via cascade-deleting ForeignKeys.
-- **Repository Pattern:** Decoupled routes from ORM operations using a base repository interface.
-- **Lifespan Startup Automation:** Bound Alembic migrations and database seeding to FastAPI startup.
-- **Dialect-Aware Pooling:** Configured the database module to safely adapt connection arguments for local SQLite testing, bypassing production `QueuePool` arguments.
+- **Bcrypt Package Direct Dependency:** Bypassed `passlib` entirely for hashing credentials. Directly invoked the `bcrypt` package to avoid the unmaintained `passlib` layer's type errors and compatibility issues in modern Python 3.13 runtimes.
+- **Secure Cookie Transports:** Implemented HTTP-only, secure, `SameSite=lax` cookie parsing for access and refresh JWTs, enhancing security relative to localStorage tokens.
+- **Security Headers Middleware:** Configured custom middleware to inject standard web security headers, restricting CSP rules on OpenAPI Swagger routes to preserve CDNs.
+- **Unlock Lockout on Password Reset:** Configured password reset confirmations to automatically clear active account lockout variables.
 
 ---
 
 ## 18. Breaking Changes
-- No breaking changes were introduced. Legacy unwrapped paths (`POST /predict/disaster` and `GET /disasters`) remain operational.
+- No breaking changes were introduced. Legacy unwrapped paths remain operational.
 
 ---
 
 ## 19. Pending Work
-- Connect the frontend pages to the backend endpoints using Axios fetch hooks.
-- Configure token checks in routing dependencies.
+- Connect the frontend pages to the new backend API endpoints using Axios fetch hooks.
+- Set up Celery background processing workers.
 
 ---
 
@@ -279,6 +319,8 @@ Defined in `.env` and settings configurations:
 - [x] Automatic database migration and seeding on startup completed.
 - [x] Standard API envelopes and global error handlers active.
 - [x] Multi-container orchestration defined (Docker Compose).
-- [ ] Authentication check middleware enabled.
+- [x] JWT access/refresh token rotation and secure cookie transports enabled.
+- [x] Role-Based Access Control checks implemented.
+- [x] Security headers middleware and login rate limiting active.
 - [ ] Real ML model weights serving active.
 - [ ] Telemetry logging and daily backup schemes configured.
