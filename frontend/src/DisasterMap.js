@@ -1,6 +1,4 @@
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import { useEffect, useState } from "react";
-import axios from "axios";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 
@@ -15,25 +13,14 @@ L.Icon.Default.mergeOptions({
     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-function DisasterMap() {
-  const [disasters, setDisasters] = useState([]);
-
-  useEffect(() => {
-    axios
-      .get("http://127.0.0.1:8000/disasters")
-      .then((res) => {
-        setDisasters(res.data);
-      })
-      .catch((err) => {
-        console.error("Error fetching disasters:", err);
-      });
-  }, []);
+function DisasterMap({ disasters = [], onSelectDisaster }) {
+  const hasDisasters = disasters.length > 0;
 
   return (
     <MapContainer
-      center={[20.5937, 78.9629]} // India center
+      center={hasDisasters ? [disasters[0].latitude, disasters[0].longitude] : [20.5937, 78.9629]}
       zoom={5}
-      style={{ height: "100vh", width: "100%" }}
+      className="disaster-map"
     >
       <TileLayer
         attribution="&copy; OpenStreetMap contributors"
@@ -41,7 +28,13 @@ function DisasterMap() {
       />
 
       {disasters.map((d) => (
-        <Marker key={d.id} position={[d.latitude, d.longitude]}>
+        <Marker
+          key={d.id}
+          position={[d.latitude, d.longitude]}
+          eventHandlers={{
+            click: () => onSelectDisaster?.(d),
+          }}
+        >
           <Popup>
             <b>Type:</b> {d.disaster_type} <br />
             <b>Risk:</b> {d.risk_level} <br />

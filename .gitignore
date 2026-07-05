@@ -1,0 +1,18 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Local configuration / secrets
+.env
+backend/.env
+
+# IDE settings
+.vscode/
+
+# Node modules / frontend builds
+node_modules/
+build/
+dist/
+.DS_Store

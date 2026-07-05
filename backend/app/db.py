@@ -1,9 +1,15 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+from app.core.config import settings
 
-DATABASE_URL = "postgresql+psycopg2://disaster_user:Immortal004%40@localhost:5432/disaster_db"
-
-engine = create_engine(DATABASE_URL)
+# Explicit connection pool configuration for production-grade reliability
+engine = create_engine(
+    settings.DATABASE_URL,
+    pool_size=10,
+    max_overflow=20,
+    pool_recycle=1800,
+    pool_pre_ping=True
+)
 
 SessionLocal = sessionmaker(
     autocommit=False,
@@ -12,3 +18,10 @@ SessionLocal = sessionmaker(
 )
 
 Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
