@@ -14,12 +14,19 @@ class InferenceCache:
             timestamp, val = self.cache[key]
             if time.time() - timestamp < self.ttl:
                 return val
-            # Garbage collect expired cache keys
+            # Garbage collect expired cache keys on-demand
             self.cache.pop(key, None)
         return None
 
     def set(self, key: str, value: Any) -> None:
-        """Saves a prediction response with current timestamp."""
+        """Saves a prediction response with current timestamp, sweeping expired keys if size grows."""
+        # Bounded cache pruning to prevent memory growth leaks in long-running processes
+        if len(self.cache) > 1000:
+            now = time.time()
+            expired_keys = [k for k, (t, _) in self.cache.items() if now - t >= self.ttl]
+            for k in expired_keys:
+                self.cache.pop(k, None)
+                
         self.cache[key] = (time.time(), value)
 
     def clear(self) -> None:

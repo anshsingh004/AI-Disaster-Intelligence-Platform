@@ -4,34 +4,31 @@ from app.services.ai.tweet_nlp import TweetNLPModel
 from app.services.ai.gemini_rag import GeminiRAGModel
 
 class AIFactory:
-    """Model factory providing singleton access to AI model stubs."""
+    """Thread-safe model factory providing singleton access to AI model stubs."""
     
-    _instances = {}
+    # Eager class instantiations ensure thread-safety. Heavy weights loading
+    # remains deferred (lazy-loaded) until first execution check.
+    _satellite = SatelliteClassificationModel()
+    _weather = WeatherPredictionModel()
+    _tweet = TweetNLPModel()
+    _rag = GeminiRAGModel()
 
     @classmethod
     def get_satellite_model(cls) -> SatelliteClassificationModel:
-        """Retrieves or instantiates the Satellite Classification Model singleton."""
-        if "satellite" not in cls._instances:
-            cls._instances["satellite"] = SatelliteClassificationModel()
-        return cls._instances["satellite"]
+        """Retrieves the Satellite Classification Model singleton."""
+        return cls._satellite
 
     @classmethod
     def get_weather_model(cls) -> WeatherPredictionModel:
-        """Retrieves or instantiates the Weather Prediction Model singleton."""
-        if "weather" not in cls._instances:
-            cls._instances["weather"] = WeatherPredictionModel()
-        return cls._instances["weather"]
+        """Retrieves the Weather Prediction Model singleton."""
+        return cls._weather
 
     @classmethod
     def get_tweet_model(cls) -> TweetNLPModel:
-        """Retrieves or instantiates the Tweet NLP Model singleton."""
-        if "tweet" not in cls._instances:
-            cls._instances["tweet"] = TweetNLPModel()
-        return cls._instances["tweet"]
+        """Retrieves the Tweet NLP Model singleton."""
+        return cls._tweet
 
     @classmethod
     def get_gemini_rag_model(cls) -> GeminiRAGModel:
-        """Retrieves or instantiates the Gemini RAG Model singleton."""
-        if "rag" not in cls._instances:
-            cls._instances["rag"] = GeminiRAGModel()
-        return cls._instances["rag"]
+        """Retrieves the Gemini RAG Model singleton."""
+        return cls._rag
