@@ -31,14 +31,10 @@ async def lifespan(app: FastAPI):
     wait_for_db()
     
     # 2. Applies migrations automatically to initialize database
-    try:
-        logger.info("Executing automatic schema migration upgrades...")
-        alembic_cfg = Config("alembic.ini")
-        command.upgrade(alembic_cfg, "head")
-        logger.info("Automatic database migrations completed.")
-    except Exception as e:
-        logger.error(f"Automatic database migration failed: {str(e)}")
-        # Allow server to start even if migrations fail, though database calls will error
+    logger.info("Executing automatic schema migration upgrades...")
+    alembic_cfg = Config("alembic.ini")
+    command.upgrade(alembic_cfg, "head")
+    logger.info("Automatic database migrations completed.")
         
     # 3. Seeds database with operational alerts and report templates
     try:
