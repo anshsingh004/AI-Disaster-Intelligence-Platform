@@ -12,6 +12,8 @@ from app.db import Base
 from app.models.disaster import Disaster
 from app.models.alert import Alert
 from app.models.report import Report
+from app.models.user import User
+from app.models.audit_log import AuditLog
 
 config = context.config
 
