@@ -9,7 +9,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.core.config import settings
 from app.db import Base
-from app.models.disaster import Disaster  # Import models to register metadata
+from app.models.disaster import Disaster
+from app.models.alert import Alert
+from app.models.report import Report
 
 config = context.config
 
