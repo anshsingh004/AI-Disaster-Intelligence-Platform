@@ -2,14 +2,20 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 from app.core.config import settings
 
-# Explicit connection pool configuration for production-grade reliability
-engine = create_engine(
-    settings.DATABASE_URL,
-    pool_size=10,
-    max_overflow=20,
-    pool_recycle=1800,
-    pool_pre_ping=True
-)
+# Dialect-aware connection creation to support SQLite during local test pipelines
+if settings.DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(
+        settings.DATABASE_URL,
+        connect_args={"check_same_thread": False}
+    )
+else:
+    engine = create_engine(
+        settings.DATABASE_URL,
+        pool_size=10,
+        max_overflow=20,
+        pool_recycle=1800,
+        pool_pre_ping=True
+    )
 
 SessionLocal = sessionmaker(
     autocommit=False,

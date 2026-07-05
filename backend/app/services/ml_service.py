@@ -1,13 +1,5 @@
-import sys
-import os
 from datetime import datetime
 from app.schemas.disaster import DisasterInput, DisasterOutput
-
-# Ensure ML package is visible on PYTHONPATH
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
-
 from ml.inference.predict import run_inference
 
 def run_disaster_inference(data: DisasterInput) -> DisasterOutput:

@@ -1,3 +1,11 @@
+import sys
+import os
+
+# Ensure project root is in path for ml and app package resolution
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
