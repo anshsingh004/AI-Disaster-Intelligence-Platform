@@ -25,13 +25,13 @@ graph TD
     Frontend -->|REST APIs| Backend[FastAPI Application Server]
     Backend -->|Repository Pattern| Repos[Repository Layer app/repositories]
     Repos -->|SQLAlchemy + QueuePool| DB[(PostgreSQL Database)]
-    Backend -->|Local Function Calls| ML[Inference Proxy ml/inference]
+    Backend -->|Local Function Calls| ML[AI Service Layer app/services/ai]
 ```
 
 - **Frontend Client:** React SPA communicating with backend services via REST.
 - **FastAPI Application Server:** Exposes routing controllers. Contains versioned APIs (`/api/v1/...`) and root-level legacy handlers.
 - **Repository Layer:** Decouples API endpoints from raw ORM statements. Encapsulates transaction operations.
-- **Inference Layer:** Computationally isolated rules proxy executing deterministic threat algorithms.
+- **AI Service Layer:** Decoupled model inference layer. Manages configuration prompts, caching, ONNX runtimes, and retry flows.
 - **Database Layer:** Normalized PostgreSQL database storing historical events, alerts, and reports. Managed by Alembic.
 
 ---
@@ -56,7 +56,8 @@ graph TD
 - **Migrations:** Alembic 1.18.x
 
 ### AI & Inference
-- **Inference Engine:** Rules proxy (`ml/inference/predict.py`)
+- **Inference Engines:** ONNX Runtime / CPU Simulation fallback layers
+- **Abstractions:** Shared inference interfaces (`BaseAIModel`)
 - **Libraries:** NumPy, Pandas, Scikit-learn, PyTorch, OpenCV-python (declared in requirements)
 
 ### DevOps & Tooling
@@ -78,7 +79,7 @@ The repository is organized cleanly by domain boundaries:
 ├── docs/                   # Engineering design documents
 ├── ml/                     # ML code, sample data, and inference logic
 │   ├── inference/
-│   │   └── predict.py      # ML Rules proxy
+│   │   └── predict.py      # ML Rules proxy (original reference baseline)
 │   └── Requirements.txt    # ML dependencies
 ├── backend/
 │   ├── alembic/            # Database migration history
@@ -88,7 +89,8 @@ The repository is organized cleanly by domain boundaries:
 │   ├── .env.example        # Environment settings template
 │   ├── .env                # Local secrets configuration
 │   ├── tests/
-│   │   └── test_auth.py    # Zero-dependency auth tests
+│   │   ├── test_auth.py    # Zero-dependency auth tests
+│   │   └── test_ai.py      # Lazy load, cache, and batch tests
 │   └── app/
 │       ├── main.py         # FastAPI lifespan bootloader and app assembly
 │       ├── db.py           # Engine pool and connection retry logic
@@ -105,6 +107,17 @@ The repository is organized cleanly by domain boundaries:
 │       ├── schemas/        # Validation schemas
 │       ├── repositories/   # Entity repositories (disaster_repository, user_repository)
 │       ├── services/       # Core business logic handlers
+│       │   ├── ml_service.py # Core ML mapping and caching logic
+│       │   └── ai/         # Unified AI Service Layer
+│       │       ├── base.py       # Base AI model abstraction interface
+│       │       ├── config.py     # Prompt, paths, and serving configurations
+│       │       ├── caching.py    # TTL-aware prediction cache
+│       │       ├── onnx_layer.py # ONNX wrapper and exponential backoff retry
+│       │       ├── factory.py    # Singleton model factories
+│       │       ├── satellite.py  # Satellite classification stubs (supports batching)
+│       │       ├── weather.py    # Weather forecasts models stubs
+│       │       ├── tweet_nlp.py  # Text parsing models stubs
+│       │       └── gemini_rag.py # Gemini generative reporting stubs
 │       └── routers/        # FastAPI endpoint controllers (disaster, auth, health)
 └── frontend/
     ├── Dockerfile          # Nginx-based React production build
@@ -215,8 +228,14 @@ Global handlers catch `HTTPException`, validation errors (`RequestValidationErro
 ---
 
 ## 7. AI Pipeline
-- **Current Setup:** Ingest coordinates and signals; compute classifications and scores via deterministic logic in [predict.py](file:///x:/college/Projects/AI-Disaster-Intelligence-Platform/ml/inference/predict.py).
-- **Abstractions:** Services interact with models using an abstract class framework. This allows swapping the local rules proxy for real model weights (ONNX/PyTorch runtimes) with zero modifications to routers.
+The AI Pipeline is decoupled from routing parameters to establish a modular inference layer:
+- **Unified Interface Contract:** All models inherit from `BaseAIModel`, implementing `load_model()` and `predict(input_data)`.
+- **Lazy Loading Optimization:** Models defer file loading until first prediction execution, accelerating server boot sequences.
+- **ONNX Compatibility Session Wrapper:** Encapsulates ONNX initialization. Automatically falls back to NumPy CPU simulations when weights files or `onnxruntime` bindings are absent.
+- **Exponential Backoff Recovery:** Forward execution queries are wrapped in the `execute_with_retry` helper, preventing minor connection blips from throwing API-level failures.
+- **TTL Caching:** Predictions are cached by hashing input properties. Matches are served in 0ms, boosting API throughput.
+- **Request Batching:** The Satellite Classification model exposes batching inputs (`predict_batch`) to process multiple coordinate calculations in a single sweep.
+- **External Serves Compatibility:** Swapping configuration metrics redirects prediction targets from local session runtimes to Ray Serve or Triton endpoints.
 
 ---
 
@@ -276,7 +295,7 @@ Defined in `.env` and settings configurations:
 ---
 
 ## 15. Current Limitations
-- AI module is limited to a deterministic rules engine proxy.
+- AI module is limited to simulation model stubs.
 - Frontend dashboard metrics represent static local arrays, not linked to APIs.
 - Background task queuing is pending setup.
 
@@ -286,17 +305,19 @@ Defined in `.env` and settings configurations:
 - **Phase 1:** Core Production Infrastructure Upgrade (Completed).
 - **Phase 2:** Persistence Layer Optimization & Normalization (Completed).
 - **Phase 3:** Production-Grade Authentication & Access Controls (Completed).
-- **Phase 4:** API integration with frontend templates and real-time weather polling.
-- **Phase 5:** RAG compilation framework (ChromaDB + Gemini).
-- **Phase 6:** Model serving pipeline (ONNX Runtime).
+- **Phase 4:** AI Layer Upgrade & Inference Abstraction (Completed).
+- **Phase 5:** API integration with frontend templates and real-time weather polling.
+- **Phase 6:** RAG compilation framework (ChromaDB + Gemini).
+- **Phase 7:** Model serving pipeline (ONNX Runtime).
 
 ---
 
 ## 17. Decisions Made
 - **Bcrypt Package Direct Dependency:** Bypassed `passlib` entirely for hashing credentials. Directly invoked the `bcrypt` package to avoid the unmaintained `passlib` layer's type errors and compatibility issues in modern Python 3.13 runtimes.
-- **Secure Cookie Transports:** Implemented HTTP-only, secure, `SameSite=lax` cookie parsing for access and refresh JWTs, enhancing security relative to localStorage tokens.
-- **Security Headers Middleware:** Configured custom middleware to inject standard web security headers, restricting CSP rules on OpenAPI Swagger routes to preserve CDNs.
-- **Unlock Lockout on Password Reset:** Configured password reset confirmations to automatically clear active account lockout variables.
+- **Decoupled AI Layer:** Separated ML inference logic from FastAPI router controllers by constructing a dedicated `AIFactory` layer.
+- **Programmatic Model Lazy Loading:** Implemented deferred model loading until first prediction runtime to optimize API server start speeds.
+- **ONNX CPU Fallbacks:** Engineered ONNX sessions to support numpy calculations when session initialization libraries are absent.
+- **Centralized Prompt Configs:** Managed RAG prompts inside settings properties to keep routes clean.
 
 ---
 
@@ -322,5 +343,8 @@ Defined in `.env` and settings configurations:
 - [x] JWT access/refresh token rotation and secure cookie transports enabled.
 - [x] Role-Based Access Control checks implemented.
 - [x] Security headers middleware and login rate limiting active.
+- [x] Decoupled AI Service Layer interface and lazy model loaders operational.
+- [x] ONNX session cpu provider loading and numpy fallback stubs configured.
+- [x] Prediction caching and exponential backoff retry loops active.
 - [ ] Real ML model weights serving active.
 - [ ] Telemetry logging and daily backup schemes configured.
