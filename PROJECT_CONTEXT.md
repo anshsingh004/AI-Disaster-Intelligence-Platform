@@ -23,14 +23,16 @@ The platform is structured as a **Modular Monolith** containing isolated domains
 graph TD
     User[EOC Operators] -->|Web Browser| Frontend[React Single Page App]
     Frontend -->|REST APIs| Backend[FastAPI Application Server]
-    Backend -->|SQLAlchemy + QueuePool| DB[(PostgreSQL Database)]
+    Backend -->|Repository Pattern| Repos[Repository Layer app/repositories]
+    Repos -->|SQLAlchemy + QueuePool| DB[(PostgreSQL Database)]
     Backend -->|Local Function Calls| ML[Inference Proxy ml/inference]
 ```
 
 - **Frontend Client:** React SPA communicating with backend services via REST.
 - **FastAPI Application Server:** Exposes routing controllers. Contains versioned APIs (`/api/v1/...`) and root-level legacy handlers.
+- **Repository Layer:** Decouples API endpoints from raw ORM statements. Encapsulates transaction operations.
 - **Inference Layer:** Computationally isolated rules proxy executing deterministic threat algorithms.
-- **Database Layer:** Structured Postgres storing historical events. Managed by Alembic.
+- **Database Layer:** Normalized PostgreSQL database storing historical events, alerts, and reports. Managed by Alembic.
 
 ---
 
@@ -86,15 +88,17 @@ The repository is organized cleanly by domain boundaries:
 │   ├── .env.example        # Environment settings template
 │   ├── .env                # Local secrets configuration
 │   └── app/
-│       ├── main.py         # FastAPI bootloader and app assembly
-│       ├── db.py           # Engine & connection pool configuration
+│       ├── main.py         # FastAPI lifespan bootloader and app assembly
+│       ├── db.py           # Engine pool and connection retry logic
+│       ├── db_seeder.py    # Automated database seeder
 │       ├── core/           # Core cross-cutting modules
 │       │   ├── config.py   # Settings validation
 │       │   ├── logging.py  # Structured logger configurations
 │       │   ├── response.py # JSON response envelopes
 │       │   └── exceptions.py # Global handlers
-│       ├── models/         # SQLAlchemy models
+│       ├── models/         # SQLAlchemy models (disaster, alert, report)
 │       ├── schemas/        # Validation schemas
+│       ├── repositories/   # Base and entity repositories (disaster_repository)
 │       ├── services/       # Core business logic handlers
 │       └── routers/        # FastAPI endpoint controllers
 └── frontend/
@@ -107,27 +111,54 @@ The repository is organized cleanly by domain boundaries:
 
 ## 5. Database Design
 
-### disasters Table Schema
-Stores assessed threat incidents:
-- `id` (Integer, Primary Key)
-- `disaster_type` (String, Indexed)
-- `severity_score` (Float)
-- `risk_level` (String, Indexed)
-- `population_at_risk` (Integer)
-- `confidence` (Float)
-- `latitude` (Float)
-- `longitude` (Float)
-- `created_at` (DateTime, Indexed)
+### Normalized Schemas
+1. **disasters Table:**
+   - `id` (Integer, Primary Key)
+   - `disaster_type` (String, Indexed)
+   - `severity_score` (Float)
+   - `risk_level` (String, Indexed)
+   - `population_at_risk` (Integer)
+   - `confidence` (Float)
+   - `latitude` (Float)
+   - `longitude` (Float)
+   - `created_at` (DateTime, Indexed)
+2. **alerts Table:**
+   - `id` (Integer, Primary Key)
+   - `disaster_id` (Integer, ForeignKey to `disasters.id` with CASCADE delete, Indexed)
+   - `level` (String, Indexed)
+   - `title` (String)
+   - `description` (String, Nullable)
+   - `escalation_probability` (Float)
+   - `acknowledged` (Boolean, Default=False)
+   - `created_at` (DateTime, Indexed)
+3. **reports Table:**
+   - `id` (Integer, Primary Key)
+   - `report_code` (String, Unique, Indexed)
+   - `disaster_id` (Integer, ForeignKey to `disasters.id` with CASCADE delete, Indexed)
+   - `type` (String, Indexed)
+   - `risk` (String, Indexed)
+   - `location` (String)
+   - `status` (String, Indexed)
+   - `summary` (String, Nullable)
+   - `created_at` (DateTime, Indexed)
 
-### Migration Management
-Managed via Alembic scripts inside `backend/alembic/`. Autogenerate configurations track changes directly from the declarative `Base` meta classes. Running `alembic upgrade head` applies pending changes transactionally.
+### Transaction Check Constraints
+Integrity constraints are enforced at the database layer via SQLAlchemy check constraints:
+- `check_latitude_bounds`: `latitude >= -90.0 AND latitude <= 90.0`
+- `check_longitude_bounds`: `longitude >= -180.0 AND longitude <= 180.0`
+- `check_severity_bounds`: `severity_score >= 0.0 AND severity_score <= 1.0`
+- `check_confidence_bounds`: `confidence >= 0.0 AND confidence <= 1.0`
+- `check_population_bounds`: `population_at_risk >= 0`
+- `check_risk_level_values`: `risk_level IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')`
+- `check_escalation_bounds`: `escalation_probability >= 0.0 AND escalation_probability <= 100.0`
+- `check_alert_level_values`: `level IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')`
+- `check_report_risk_values`: `risk IN ('low', 'medium', 'high', 'critical')`
+- `check_report_status_values`: `status IN ('active', 'monitoring', 'resolved')`
 
-### Connection Pooling
-Synchronous connection pooling is handled by `QueuePool` on `create_engine`:
-- `pool_size=10`
-- `max_overflow=20`
-- `pool_recycle=1800`
-- `pool_pre_ping=True`
+### Connection Pooling & Resiliency
+- Managed via `QueuePool` with parameters: `pool_size=10`, `max_overflow=20`, `pool_recycle=1800`, `pool_pre_ping=True`.
+- Development bypass: engine builder detects SQLite protocols (e.g. `sqlite://`) and automatically configures single-thread connection overrides, avoiding pool-size errors.
+- Retry Loop: `wait_for_db` queries PostgreSQL at startup with exponential backoff to handle container launch delays.
 
 ---
 
@@ -214,26 +245,28 @@ Defined in `.env` and settings configurations:
 
 ## 16. Future Roadmap
 - **Phase 1:** Core Production Infrastructure Upgrade (Completed).
-- **Phase 2:** API integration with frontend templates and real-time weather polling.
-- **Phase 3:** RAG compilation framework (ChromaDB + Gemini).
-- **Phase 4:** Model serving pipeline (ONNX Runtime).
+- **Phase 2:** Persistence Layer Optimization & Normalization (Completed).
+- **Phase 3:** API integration with frontend templates and real-time weather polling.
+- **Phase 4:** RAG compilation framework (ChromaDB + Gemini).
+- **Phase 5:** Model serving pipeline (ONNX Runtime).
 
 ---
 
 ## 17. Decisions Made
-- **Sync DB Executions:** Used synchronous SQLAlchemy with `QueuePool` connection pooling rather than `AsyncSession` to maintain architectural simplicity.
-- **Multi-stage Containers:** Used multi-stage Docker builds to keep production image footprints under 150MB.
-- **Legacy Compatibility:** Staged both enveloped `/api/v1` routes and raw legacy endpoints to prevent breaking changes.
+- **Database Normalization:** Split database schema to introduce related `alerts` and `reports` entities linked to `disasters` via cascade-deleting ForeignKeys.
+- **Repository Pattern:** Decoupled routes from ORM operations using a base repository interface.
+- **Lifespan Startup Automation:** Bound Alembic migrations and database seeding to FastAPI startup.
+- **Dialect-Aware Pooling:** Configured the database module to safely adapt connection arguments for local SQLite testing, bypassing production `QueuePool` arguments.
 
 ---
 
 ## 18. Breaking Changes
-- No breaking changes were introduced during Phase 1. Legacy endpoints remain operational.
+- No breaking changes were introduced. Legacy unwrapped paths (`POST /predict/disaster` and `GET /disasters`) remain operational.
 
 ---
 
 ## 19. Pending Work
-- Refactor the React pages to fetch and send data using the new versioned backend API endpoints.
+- Connect the frontend pages to the backend endpoints using Axios fetch hooks.
 - Configure token checks in routing dependencies.
 
 ---
@@ -241,7 +274,9 @@ Defined in `.env` and settings configurations:
 ## 20. Production Readiness Checklist
 - [x] Environment variables validated (Pydantic-Settings).
 - [x] Production connection pooling enabled (QueuePool).
+- [x] Check constraints and relational integrity constraints enforced at database layer.
 - [x] Versioned migrations configured (Alembic).
+- [x] Automatic database migration and seeding on startup completed.
 - [x] Standard API envelopes and global error handlers active.
 - [x] Multi-container orchestration defined (Docker Compose).
 - [ ] Authentication check middleware enabled.
