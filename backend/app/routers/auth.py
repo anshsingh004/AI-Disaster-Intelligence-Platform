@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import secrets
 
 from app.db import get_db
@@ -82,8 +82,9 @@ def login(request: Request, response: Response, data: LoginInput, db: Session = 
         )
 
     # 2. Check Account Lockout State
-    if user.lockout_until and user.lockout_until > datetime.utcnow():
-        lock_remaining = int((user.lockout_until - datetime.utcnow()).total_seconds() / 60)
+    now_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    if user.lockout_until and user.lockout_until > now_utc_naive:
+        lock_remaining = int((user.lockout_until - now_utc_naive).total_seconds() / 60)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Account locked due to consecutive failures. Try again in {lock_remaining} minutes."

@@ -18,6 +18,11 @@ class RateLimiter:
         # Keep only timestamps within the current window
         self.requests[client_ip] = [t for t in self.requests[client_ip] if now - t < self.period]
         
+        # Garbage collect the key if there are no tracking requests, preventing memory leak
+        if not self.requests[client_ip]:
+            self.requests.pop(client_ip, None)
+            return True
+            
         if len(self.requests[client_ip]) >= self.limit:
             return False
             

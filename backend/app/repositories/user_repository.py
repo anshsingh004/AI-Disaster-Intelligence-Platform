@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from app.repositories.base import BaseRepository
 from app.models.user import User
@@ -56,10 +56,9 @@ class UserRepository(BaseRepository):
         user.failed_login_attempts = 0
         user.lockout_until = None
         return self.update(user)
-
     def lock_account(self, user: User, minutes: int = 15) -> User:
         """Locks user account for a specified time period."""
-        user.lockout_until = datetime.utcnow() + timedelta(minutes=minutes)
+        user.lockout_until = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=minutes)
         return self.update(user)
 
     def log_security_event(self, email: str, action: str, ip: str) -> None:
