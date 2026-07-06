@@ -1,8 +1,12 @@
 import time
-from typing import Dict, List
+import logging
+from typing import Dict, List, Optional
+from app.core.redis import get_redis_client
+
+logger = logging.getLogger(__name__)
 
 class RateLimiter:
-    """In-memory sliding window rate limiter to prevent route abuse."""
+    """Hybrid rate limiter storing counts in Redis, falling back to local memory if offline."""
     
     def __init__(self, limit: int = 5, period: float = 300.0):
         self.limit = limit          # Max requests allowed
@@ -10,15 +14,40 @@ class RateLimiter:
         self.requests: Dict[str, List[float]] = {}
 
     def is_allowed(self, client_ip: str) -> bool:
-        """Checks if a client IP is within request thresholds, tracking the call time."""
+        """Determines if a request from client_ip is within the rate limit."""
+        client = get_redis_client()
+        if client:
+            try:
+                key = f"rate_limit:{client_ip}"
+                now = time.time()
+                
+                # Use Redis transaction pipeline to log call, prune and return count
+                pipe = client.pipeline()
+                pipe.lpush(key, now)
+                pipe.ltrim(key, 0, self.limit * 2)  # Keep lists small to optimize space
+                pipe.expire(key, int(self.period))
+                pipe.lrange(key, 0, -1)
+                results = pipe.execute()
+                
+                # Filter elements that fell outside the window
+                timestamps = [float(t) for t in results[3]]
+                valid_timestamps = [t for t in timestamps if now - t < self.period]
+                
+                if len(valid_timestamps) > self.limit:
+                    return False
+                return True
+            except Exception as e:
+                logger.warning(f"Redis rate limiting operation failed (falling back to memory): {str(e)}")
+
+        # Fallback to Local In-Memory sliding window limiter
         now = time.time()
         if client_ip not in self.requests:
             self.requests[client_ip] = []
         
-        # Keep only timestamps within the current window
+        # Prune expired timestamps
         self.requests[client_ip] = [t for t in self.requests[client_ip] if now - t < self.period]
         
-        # Garbage collect the key if there are no tracking requests, preventing memory leak
+        # Garbage collect key if empty
         if not self.requests[client_ip]:
             self.requests.pop(client_ip, None)
             return True

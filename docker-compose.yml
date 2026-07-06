@@ -18,6 +18,17 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: disaster_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: ./backend
@@ -27,10 +38,13 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql+psycopg2://disaster_user:Immortal004%40@db:5432/disaster_db
+      - REDIS_URL=redis://redis:6379/0
       - ENV=production
       - LOG_LEVEL=INFO
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     restart: always
 

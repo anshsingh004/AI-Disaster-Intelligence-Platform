@@ -1,9 +1,11 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AI Disaster Intelligence Platform"
     ENV: str = "development"
     DATABASE_URL: str = "postgresql+psycopg2://disaster_user:Immortal004%40@localhost:5432/disaster_db"
+    REDIS_URL: Optional[str] = "redis://localhost:6379/0"
     API_V1_STR: str = "/api/v1"
     LOG_LEVEL: str = "INFO"
 

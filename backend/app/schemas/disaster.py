@@ -1,14 +1,14 @@
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel
 from datetime import datetime
+from typing import List
 
 class DisasterInput(BaseModel):
-    latitude: float = Field(..., ge=-90.0, le=90.0, description="Latitude coordinate")
-    longitude: float = Field(..., ge=-180.0, le=180.0, description="Longitude coordinate")
-    timestamp: datetime = Field(..., description="Timestamp of threat detection")
-    weather_rainfall: Optional[float] = Field(default=None, ge=0.0, description="Rainfall signal in mm")
-    weather_wind_speed: Optional[float] = Field(default=None, ge=0.0, description="Wind speed signal in km/h")
-    social_signal_score: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Social signal score")
+    latitude: float
+    longitude: float
+    timestamp: datetime
+    weather_rainfall: float
+    weather_wind_speed: float
+    social_signal_score: float
 
 class DisasterOutput(BaseModel):
     disaster_type: str
@@ -31,4 +31,11 @@ class DisasterRecord(BaseModel):
 
     class Config:
         from_attributes = True
-        # Pydantic v2 configuration compatibility for ORM mapping
+
+class DisasterPaginationResponse(BaseModel):
+    """Schema wrapping paginated lists of disaster records with execution metadata."""
+    items: List[DisasterRecord]
+    total: int
+    page: int
+    limit: int
+    pages: int
