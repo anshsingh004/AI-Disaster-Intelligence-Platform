@@ -33,7 +33,7 @@ def predict_disaster_v1(
     # Invalidate cache on write
     invalidate_disaster_cache()
     
-    record_data = DisasterRecord.model_validate(db_record).model_dump()
+    record_data = DisasterRecord.model_validate(db_record).model_dump(mode="json")
     return success_response(data=record_data)
 
 @v1_router.get("/disasters", response_model=dict)
@@ -86,7 +86,7 @@ def get_disasters_v1(
     )
 
     # 5. Format payload
-    records_data = [DisasterRecord.model_validate(r).model_dump() for r in records]
+    records_data = [DisasterRecord.model_validate(r).model_dump(mode="json") for r in records]
     pages = (total + limit - 1) // limit
     
     paginated_data = {
