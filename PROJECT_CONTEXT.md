@@ -25,6 +25,7 @@ graph TD
     Frontend -->|REST APIs| Backend[FastAPI Application Server]
     Backend -->|Repository Pattern| Repos[Repository Layer app/repositories]
     Repos -->|SQLAlchemy + QueuePool| DB[(PostgreSQL Database)]
+    Backend -->|Redis/Memory Client| Cache[(Redis Cache / Rate Limiter)]
     Backend -->|Local Function Calls| ML[AI Service Layer app/services/ai]
 ```
 
@@ -33,6 +34,7 @@ graph TD
 - **Repository Layer:** Decouples API endpoints from raw ORM statements. Encapsulates transaction operations.
 - **AI Service Layer:** Decoupled model inference layer. Manages configuration prompts, caching, ONNX runtimes, and retry flows.
 - **Database Layer:** Normalized PostgreSQL database storing historical events, alerts, and reports. Managed by Alembic.
+- **Cache Layer:** Distributed Redis key-value database caching response payloads and managing connection rate limit counters.
 
 ---
 
@@ -54,6 +56,10 @@ graph TD
 - **Engine:** PostgreSQL 15-alpine
 - **Adapter:** psycopg2-binary 2.9.x
 - **Migrations:** Alembic 1.18.x
+
+### Distributed Caching & Rate Limiting
+- **Engine:** Redis 7.x-alpine
+- **Client:** redis-py 5.0.x
 
 ### AI & Inference
 - **Inference Engines:** ONNX Runtime / CPU Simulation fallback layers
@@ -91,6 +97,8 @@ The repository is organized cleanly by domain boundaries:
 │   ├── tests/
 │   │   ├── test_auth.py    # Zero-dependency auth tests
 │   │   └── test_ai.py      # Lazy load, cache, and batch tests
+│   ├── scripts/
+│   │   └── benchmark_api.py # Automated API latency benchmark script
 │   └── app/
 │       ├── main.py         # FastAPI lifespan bootloader and app assembly
 │       ├── db.py           # Engine pool and connection retry logic
@@ -101,8 +109,10 @@ The repository is organized cleanly by domain boundaries:
 │       │   ├── logging.py  # Structured logger configurations
 │       │   ├── response.py # JSON response envelopes
 │       │   ├── exceptions.py # Global handlers
-│       │   ├── rate_limit.py # Sliding-window rate limiter
-│       │   └── security.py # Password hash and JWT utils
+│       │   ├── rate_limit.py # Sliding-window rate limiter (Redis/Memory)
+│       │   ├── security.py # Password hash and JWT utils
+│       │   ├── redis.py    # Redis client manager
+│       │   └── cache.py    # Redis/Memory caching wrapper
 │       ├── models/         # SQLAlchemy models (disaster, alert, report, user, audit_log)
 │       ├── schemas/        # Validation schemas
 │       ├── repositories/   # Entity repositories (disaster_repository, user_repository)
@@ -114,7 +124,7 @@ The repository is organized cleanly by domain boundaries:
 │       │       ├── caching.py    # TTL-aware prediction cache
 │       │       ├── onnx_layer.py # ONNX wrapper and exponential backoff retry
 │       │       ├── factory.py    # Singleton model factories
-│       │       ├── satellite.py  # Satellite classification stubs (supports batching)
+│       │       ├── satellite.py  # Satellite classification stubs
 │       │       ├── weather.py    # Weather forecasts models stubs
 │       │       ├── tweet_nlp.py  # Text parsing models stubs
 │       │       └── gemini_rag.py # Gemini generative reporting stubs
@@ -127,9 +137,9 @@ The repository is organized cleanly by domain boundaries:
 
 ---
 
-## 5. Database Design
+## 5. Database & Cache Design
 
-### Normalized Schemas
+### Normalized SQL Schemas
 1. **disasters Table:**
    - `id` (Integer, Primary Key)
    - `disaster_type` (String, Indexed)
@@ -184,7 +194,7 @@ The repository is organized cleanly by domain boundaries:
    - `ip_address` (String, Nullable)
    - `created_at` (DateTime, Indexed)
 
-### Transaction Check Constraints
+### SQL Check Constraints
 Integrity constraints are enforced at the database layer via SQLAlchemy check constraints:
 - `check_latitude_bounds`: `latitude >= -90.0 AND latitude <= 90.0`
 - `check_longitude_bounds`: `longitude >= -180.0 AND longitude <= 180.0`
@@ -204,12 +214,26 @@ Integrity constraints are enforced at the database layer via SQLAlchemy check co
 - Development bypass: engine builder detects SQLite protocols (e.g. `sqlite://`) and automatically configures single-thread connection overrides, avoiding pool-size errors.
 - Retry Loop: `wait_for_db` queries PostgreSQL at startup with exponential backoff to handle container launch delays.
 
+### Distributed Cache Topology (Redis)
+- **Response Caching:** Stores serialized API response envelopes with a 5-minute (300 seconds) TTL.
+- **Write-Through Cache Eviction:** Inserts (`POST /api/v1/predict/disaster`) trigger automatic invalidation of list-based cache entries (`disasters_list:*`), guaranteeing consistency.
+- **Distributed Rate Limiting:** Enforces sliding-window limits using Redis list pipelines (`lpush`, `ltrim`, `expire`, `lrange`).
+- **Resilient Fallback:** If the Redis client goes offline, the system falls back to in-memory dictionaries automatically. A 30-second connection cooldown prevents request latency blockages when the backing cache database is down.
+
 ---
 
 ## 6. API Design Principles
 
 ### Path Versioning
 New endpoints are mounted under the `/api/v1` namespace. Legacy routes are maintained at the root for backward compatibility.
+
+### Query Modifiers
+The list disasters endpoint (`GET /api/v1/disasters`) supports the following parameters:
+- **Pagination:** `page: int` and `limit: int` (translates to database-level `limit` and `offset` slices).
+- **Categorical Filters:** `disaster_type: str` and `risk_level: str`.
+- **Numerical Range Filters:** `min_severity: float` and `max_severity: float`.
+- **Sorting Orders:** `sort_by: str` and `order: str` (validated to block SQL injections).
+- **Wildcard Search:** `search: str` (wildcard text matching on disaster types).
 
 ### Standard Response Envelope
 All versioned endpoint payloads conform to this envelope structure:
@@ -266,6 +290,7 @@ The authentication layer enforces secure token-based user sessions:
 ## 11. Infrastructure
 Services run in isolated Docker containers linked via docker-compose networking:
 - **disaster_db:** Postgres 15 database instance using volume mounting for persistence.
+- **disaster_redis:** Redis 7 caching database.
 - **disaster_backend:** FastAPI application server running Uvicorn.
 - **disaster_frontend:** React SPA served via Nginx.
 
@@ -282,6 +307,7 @@ Defined in `.env` and settings configurations:
 - `ENV` (e.g. `development`, `production`)
 - `LOG_LEVEL` (e.g. `INFO`, `WARNING`)
 - `DATABASE_URL` (SQLAlchemy postgresql connection string)
+- `REDIS_URL` (Redis cache connection string)
 - `JWT_SECRET_KEY` (Access token signing secret)
 - `JWT_REFRESH_SECRET_KEY` (Refresh token signing secret)
 
@@ -306,18 +332,17 @@ Defined in `.env` and settings configurations:
 - **Phase 2:** Persistence Layer Optimization & Normalization (Completed).
 - **Phase 3:** Production-Grade Authentication & Access Controls (Completed).
 - **Phase 4:** AI Layer Upgrade & Inference Abstraction (Completed).
-- **Phase 5:** API integration with frontend templates and real-time weather polling.
-- **Phase 6:** RAG compilation framework (ChromaDB + Gemini).
-- **Phase 7:** Model serving pipeline (ONNX Runtime).
+- **Phase 5:** Production API Capabilities & Distributed Caching (Completed).
+- **Phase 6:** API integration with frontend templates and real-time weather polling.
+- **Phase 7:** RAG compilation framework (ChromaDB + Gemini).
 
 ---
 
 ## 17. Decisions Made
 - **Bcrypt Package Direct Dependency:** Bypassed `passlib` entirely for hashing credentials. Directly invoked the `bcrypt` package to avoid the unmaintained `passlib` layer's type errors and compatibility issues in modern Python 3.13 runtimes.
-- **Decoupled AI Layer:** Separated ML inference logic from FastAPI router controllers by constructing a dedicated `AIFactory` layer.
-- **Programmatic Model Lazy Loading:** Implemented deferred model loading until first prediction runtime to optimize API server start speeds.
-- **ONNX CPU Fallbacks:** Engineered ONNX sessions to support numpy calculations when session initialization libraries are absent.
-- **Centralized Prompt Configs:** Managed RAG prompts inside settings properties to keep routes clean.
+- **Redis Connection Cooldowns:** Restricts Redis connect retries to a 30-second cooldown interval if connection timeouts occur. This prevents requests from blocking on every single route call when backing databases are temporarily down.
+- **Write-Through Cache Eviction:** Evicts list cache keys starting with `disasters_list:*` during disaster creations (`POST /predict/disaster`) to prevent stale reads.
+- **Redis List Pipeline rate limiting:** Used transaction pipelines on Redis lists to track IP access windows securely without race conditions.
 
 ---
 
@@ -346,5 +371,7 @@ Defined in `.env` and settings configurations:
 - [x] Decoupled AI Service Layer interface and lazy model loaders operational.
 - [x] ONNX session cpu provider loading and numpy fallback stubs configured.
 - [x] Prediction caching and exponential backoff retry loops active.
+- [x] Redis distributed caching and rate limiting with connection cooldowns active.
+- [x] API query pagination, dynamic sorting, filters, and searches implemented.
 - [ ] Real ML model weights serving active.
 - [ ] Telemetry logging and daily backup schemes configured.
