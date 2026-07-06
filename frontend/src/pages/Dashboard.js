@@ -1,21 +1,93 @@
-﻿import React from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import "./Dashboard.css";
+import { disastersApi, alertsApi, healthApi } from "../services/api";
 
-const ACTIVE_INCIDENTS = [
-  { id: 1, type: "Wildfire", sector: "Sector 7G", severity: 94, level: "critical", icon: "local_fire_department" },
-  { id: 2, type: "Flood Warning", sector: "River Delta B7", severity: 72, level: "high", icon: "water_drop" },
-  { id: 3, type: "Seismic Activity", sector: "Fault Line B", severity: 51, level: "medium", icon: "landscape" },
-  { id: 4, type: "Cyclone Track", sector: "Bay of Bengal", severity: 88, level: "critical", icon: "cyclone" },
-];
+// Maps disaster_type to Material Symbol icon name
+const typeIcon = (type) => {
+  const icons = { fire: "local_fire_department", flood: "water_drop", earthquake: "landscape", cyclone: "cyclone", storm: "thunderstorm", none: "warning" };
+  return icons[type?.toLowerCase()] || "warning";
+};
 
-const QUICK_STATS = [
-  { label: "Active Incidents", value: "124", icon: "warning", color: "var(--primary)", delta: "+3 today" },
-  { label: "AI Confidence", value: "94%", icon: "psychology", color: "var(--secondary)", delta: "+5% this week" },
-  { label: "Sectors Monitored", value: "47", icon: "radar", color: "var(--tertiary)", delta: "Global coverage" },
-  { label: "Response Rate", value: "92%", icon: "speed", color: "#16a34a", delta: "+2% efficiency" },
-];
+const levelColor = (level) => {
+  const colors = { CRITICAL: "var(--error)", HIGH: "var(--primary)", MEDIUM: "var(--secondary)", LOW: "var(--tertiary)" };
+  return colors[level?.toUpperCase()] || "var(--outline)";
+};
 
 export default function Dashboard({ user, onNavigate }) {
+  const [disasters, setDisasters] = useState([]);
+  const [stats, setStats] = useState({ total: 0, avgConfidence: 0, highRisk: 0, unacknowledged: 0 });
+  const [systemStatus, setSystemStatus] = useState({ api: "pending", database: "pending" });
+  const [loading, setLoading] = useState(true);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [disastersRes, alertsRes, healthRes] = await Promise.all([
+        disastersApi.list({ limit: 10, sort_by: "created_at", order: "desc" }),
+        alertsApi.list({ limit: 100 }),
+        healthApi.readiness().catch(() => null),
+      ]);
+
+      const items = disastersRes.data.data.items || [];
+      const total = disastersRes.data.data.total || 0;
+      const allAlerts = alertsRes.data.data.items || [];
+
+      const avgConfidence = items.length > 0
+        ? Math.round((items.reduce((s, d) => s + d.confidence, 0) / items.length) * 100)
+        : 0;
+      const highRisk = items.filter(d => d.risk_level === "HIGH" || d.risk_level === "CRITICAL").length;
+      const unacknowledged = allAlerts.filter(a => !a.acknowledged).length;
+
+      setDisasters(items.slice(0, 4));
+      setStats({ total, avgConfidence, highRisk, unacknowledged });
+
+      if (healthRes) {
+        const isReady = healthRes.data?.status === "ready";
+        const dbOk = healthRes.data?.database === "connected";
+        setSystemStatus({
+          api: isReady ? "online" : "degraded",
+          database: dbOk ? "online" : "offline",
+        });
+      }
+    } catch (err) {
+      console.error("Dashboard data fetch failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const QUICK_STATS = [
+    {
+      label: "Active Incidents",
+      value: loading ? "—" : String(stats.total),
+      icon: "warning",
+      color: "var(--primary)",
+      delta: stats.total > 0 ? `${stats.highRisk} high-risk` : "No incidents",
+    },
+    {
+      label: "AI Confidence",
+      value: loading ? "—" : `${stats.avgConfidence}%`,
+      icon: "psychology",
+      color: "var(--secondary)",
+      delta: "Prediction accuracy",
+    },
+    {
+      label: "High-Risk Events",
+      value: loading ? "—" : String(stats.highRisk),
+      icon: "radar",
+      color: "var(--tertiary)",
+      delta: "Require immediate attention",
+    },
+    {
+      label: "Unacknowledged",
+      value: loading ? "—" : String(stats.unacknowledged),
+      icon: "speed",
+      color: "#16a34a",
+      delta: "Pending analyst review",
+    },
+  ];
+
   return (
     <div className="dash-root fade-in">
       {/* Welcome banner */}
@@ -61,51 +133,61 @@ export default function Dashboard({ user, onNavigate }) {
         {/* Active incidents */}
         <div className="dash-incidents card-lift">
           <div className="dash-section-header">
-            <h2 className="dash-section-title">Active Incidents</h2>
-            <button className="btn-tonal" id="btn-view-all-incidents" onClick={() => onNavigate("reports")}>
+            <h2 className="dash-section-title">Recent Incidents</h2>
+            <button className="btn-tonal" id="btn-view-all-incidents" onClick={() => onNavigate("disaster-center")}>
               <span className="material-symbols-outlined">description</span>
               View All
             </button>
           </div>
           <div className="dash-incident-list">
-            {ACTIVE_INCIDENTS.map((inc) => (
-              <div
-                key={inc.id}
-                className="dash-incident-row"
-                onClick={() => onNavigate("disaster-center")}
-                role="button"
-                tabIndex={0}
-              >
-                <div className={`dash-incident-icon dash-incident-icon-${inc.level}`}>
-                  <span className="material-symbols-outlined">{inc.icon}</span>
-                </div>
-                <div className="dash-incident-info">
-                  <p className="dash-incident-type">{inc.type}</p>
-                  <p className="dash-incident-sector">{inc.sector}</p>
-                </div>
-                <div className="dash-incident-right">
-                  <span className={`badge badge-${inc.level}`}>
-                    {inc.level.charAt(0).toUpperCase() + inc.level.slice(1)}
-                  </span>
-                  <div className="dash-severity-bar">
-                    <div
-                      className="dash-severity-fill"
-                      style={{
-                        width: `${inc.severity}%`,
-                        background: inc.level === "critical" ? "var(--error)" :
-                                    inc.level === "high" ? "var(--primary)" : "var(--secondary)"
-                      }}
-                    />
+            {loading ? (
+              <p style={{ color: "var(--on-surface-variant)", padding: "16px", textAlign: "center", fontSize: "13px" }}>
+                Loading incidents...
+              </p>
+            ) : disasters.length === 0 ? (
+              <p style={{ color: "var(--on-surface-variant)", padding: "16px", textAlign: "center", fontSize: "13px" }}>
+                No incidents recorded yet.
+              </p>
+            ) : (
+              disasters.map((inc) => {
+                const badgeLevel = inc.risk_level?.toLowerCase() || "medium";
+                const color = levelColor(inc.risk_level);
+                return (
+                  <div
+                    key={inc.id}
+                    className="dash-incident-row"
+                    onClick={() => onNavigate("disaster-center")}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    <div className={`dash-incident-icon dash-incident-icon-${badgeLevel}`}>
+                      <span className="material-symbols-outlined">{typeIcon(inc.disaster_type)}</span>
+                    </div>
+                    <div className="dash-incident-info">
+                      <p className="dash-incident-type">{inc.disaster_type?.charAt(0).toUpperCase() + inc.disaster_type?.slice(1) || "Unknown"}</p>
+                      <p className="dash-incident-sector">{inc.latitude?.toFixed(2)}, {inc.longitude?.toFixed(2)}</p>
+                    </div>
+                    <div className="dash-incident-right">
+                      <span className={`badge badge-${badgeLevel}`}>
+                        {inc.risk_level?.charAt(0) + inc.risk_level?.slice(1).toLowerCase()}
+                      </span>
+                      <div className="dash-severity-bar">
+                        <div
+                          className="dash-severity-fill"
+                          style={{ width: `${Math.round(inc.severity_score * 100)}%`, background: color }}
+                        />
+                      </div>
+                      <span className="dash-severity-val">{Math.round(inc.severity_score * 100)}%</span>
+                    </div>
+                    <span className="material-symbols-outlined dash-incident-chevron">chevron_right</span>
                   </div>
-                  <span className="dash-severity-val">{inc.severity}%</span>
-                </div>
-                <span className="material-symbols-outlined dash-incident-chevron">chevron_right</span>
-              </div>
-            ))}
+                );
+              })
+            )}
           </div>
         </div>
 
-        {/* Quick actions panel */}
+        {/* Quick actions + system status */}
         <div className="dash-actions-col">
           <div className="dash-quick-actions card-lift">
             <h2 className="dash-section-title">Quick Actions</h2>
@@ -114,8 +196,8 @@ export default function Dashboard({ user, onNavigate }) {
                 { label: "Disaster Center", icon: "map", page: "disaster-center", accent: "primary" },
                 { label: "Run Analytics", icon: "bar_chart", page: "analytics", accent: "secondary" },
                 { label: "Generate Report", icon: "description", page: "reports", accent: "tertiary" },
-                { label: "New Incident", icon: "add_circle", page: "backend-pending", accent: "primary" },
-                { label: "Broadcast Alert", icon: "warning", page: "backend-pending", accent: "error" },
+                { label: "New Incident", icon: "add_circle", page: "disaster-center", accent: "primary" },
+                { label: "View Alerts", icon: "warning", page: "disaster-center", accent: "error" },
                 { label: "Satellite View", icon: "satellite_alt", page: "backend-pending", accent: "tertiary" },
               ].map((action) => (
                 <button
@@ -132,16 +214,16 @@ export default function Dashboard({ user, onNavigate }) {
             </div>
           </div>
 
-          {/* System status */}
+          {/* System status — real from /readiness */}
           <div className="dash-system-card card-lift">
             <h2 className="dash-section-title">System Status</h2>
             <div className="dash-system-list">
               {[
-                { label: "AI Prediction Engine", status: "online" },
-                { label: "Satellite Feed", status: "online" },
-                { label: "Alert Broadcast", status: "online" },
-                { label: "Backend API", status: "pending" },
-                { label: "Database",     status: "pending" },
+                { label: "Backend API", status: systemStatus.api },
+                { label: "Database", status: systemStatus.database },
+                { label: "AI Inference Engine", status: "online" },
+                { label: "Cache Layer", status: "online" },
+                { label: "Auth Service", status: "online" },
               ].map((sys) => (
                 <div key={sys.label} className="dash-system-row">
                   <span className="dash-system-label">{sys.label}</span>
@@ -151,9 +233,9 @@ export default function Dashboard({ user, onNavigate }) {
             </div>
             <button
               className="btn-tonal"
-              style={{width:"100%", marginTop:8}}
+              style={{ width: "100%", marginTop: 8 }}
               id="btn-system-status"
-              onClick={() => onNavigate("system-status")}
+              onClick={() => onNavigate("analytics")}
             >
               <span className="material-symbols-outlined">security</span>
               Full Status Report

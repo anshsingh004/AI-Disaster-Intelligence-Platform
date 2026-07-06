@@ -32,13 +32,13 @@ function parseJwt(token) {
 
 
 
-function renderPage(page, user, navigate, logout) {
+function renderPage(page, user, navigate, logout, updateUser) {
   switch (page) {
     case "dashboard":        return <Dashboard        user={user}    onNavigate={navigate} />;
     case "disaster-center":  return <DisasterCenter   user={user}    onNavigate={navigate} />;
     case "analytics":        return <Analytics                       onNavigate={navigate} />;
-    case "reports":          return <Reports                         onNavigate={navigate} />;
-    case "profile":          return <Profile          user={user}    onNavigate={navigate} onLogout={logout} />;
+    case "reports":          return <Reports          user={user}    onNavigate={navigate} />;
+    case "profile":          return <Profile          user={user}    onNavigate={navigate} onLogout={logout} onUserUpdate={updateUser} />;
     case "legal":            return <Legal                           onNavigate={navigate} />;
     case "support":          return <BackendPending                  onNavigate={navigate} />;
     case "system-status":    return <BackendPending                  onNavigate={navigate} />;
@@ -65,17 +65,25 @@ export default function App() {
         const access_token = response.data.data.access_token;
         localStorage.setItem("access_token", access_token);
 
-        const cachedUser = localStorage.getItem("user");
-        if (cachedUser) {
-          setUser(JSON.parse(cachedUser));
-        } else {
-          // If user details were missing but token is valid, parse the email/role from access_token
-          const payload = parseJwt(access_token);
-          const email = payload?.sub || "analyst@terra-aura.dev";
-          const role = payload?.role || "ANALYST";
-          const fallbackUser = { name: email.split("@")[0], email, role, clearance_level: "Alpha" };
-          localStorage.setItem("user", JSON.stringify(fallbackUser));
-          setUser(fallbackUser);
+        // Fetch fresh user profile from /me after successful refresh
+        try {
+          const meResponse = await apiClient.get("/api/v1/auth/me");
+          const freshUser = meResponse.data.data;
+          localStorage.setItem("user", JSON.stringify(freshUser));
+          setUser(freshUser);
+        } catch {
+          // Fallback to cached user if /me fails (graceful degradation)
+          const cachedUser = localStorage.getItem("user");
+          if (cachedUser) {
+            setUser(JSON.parse(cachedUser));
+          } else {
+            const payload = parseJwt(access_token);
+            const email = payload?.sub || "analyst@terra-aura.dev";
+            const role = payload?.role || "ANALYST";
+            const fallbackUser = { name: email.split("@")[0], email, role, clearance_level: "Alpha" };
+            localStorage.setItem("user", JSON.stringify(fallbackUser));
+            setUser(fallbackUser);
+          }
         }
       } catch (err) {
         // If refresh fails, clear out expired access metrics
@@ -97,6 +105,12 @@ export default function App() {
   const signIn = (userObj) => {
     setUser(userObj);
     setActivePage("dashboard");
+  };
+
+  /** Called by Profile when the user successfully saves name changes. */
+  const updateUser = (updatedUser) => {
+    setUser(updatedUser);
+    localStorage.setItem("user", JSON.stringify(updatedUser));
   };
 
   const logoutCleanly = () => {
@@ -161,7 +175,7 @@ export default function App() {
         )}
 
         <div className="app-content">
-          {renderPage(activePage, user, navigate, logout)}
+          {renderPage(activePage, user, navigate, logout, updateUser)}
         </div>
       </div>
     </div>

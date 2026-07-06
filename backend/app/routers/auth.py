@@ -5,7 +5,9 @@ import secrets
 
 from app.db import get_db
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import UserCreate, UserResponse
+from app.schemas.user import UserCreate, UserResponse, UserUpdateInput
+from app.dependencies import get_current_user
+from app.models.user import User
 from app.schemas.auth import LoginInput, VerifyEmailInput, PasswordResetRequest, PasswordResetConfirm
 from app.core.security import verify_password, get_password_hash, create_access_token, create_refresh_token, decode_refresh_token
 from app.core.response import success_response
@@ -240,3 +242,25 @@ def reset_password(data: PasswordResetConfirm, db: Session = Depends(get_db)):
     user_repo.log_security_event(user.email, "PASSWORD_RESET_COMMIT", "0.0.0.0")
     
     return success_response(data={"message": "Password updated successfully"})
+
+
+@router.get("/me", response_model=dict)
+def get_me(current_user: User = Depends(get_current_user)):
+    """Return the full profile of the currently authenticated user."""
+    return success_response(data=UserResponse.model_validate(current_user).model_dump())
+
+
+@router.put("/me", response_model=dict)
+def update_me(
+    data: UserUpdateInput,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update the authenticated user's profile. Only the name field is self-updatable."""
+    if data.name is not None:
+        current_user.name = data.name
+
+    user_repo = UserRepository(db)
+    updated_user = user_repo.update(current_user)
+
+    return success_response(data=UserResponse.model_validate(updated_user).model_dump())

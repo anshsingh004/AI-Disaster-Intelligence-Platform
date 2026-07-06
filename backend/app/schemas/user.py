@@ -19,3 +19,9 @@ class UserResponse(UserBase):
 
     class Config:
         from_attributes = True
+
+
+class UserUpdateInput(BaseModel):
+    """Schema for user profile update. Only name is self-updatable; role and clearance are RBAC-controlled."""
+    name: Optional[str] = Field(None, min_length=2, max_length=50)
+
