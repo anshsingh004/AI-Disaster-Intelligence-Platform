@@ -117,6 +117,7 @@ apiClient.interceptors.response.use(
 export const disastersApi = {
   list: (params = {}) => apiClient.get("/api/v1/disasters", { params }),
   create: (payload) => apiClient.post("/api/v1/predict/disaster", payload),
+  acknowledge: (id) => apiClient.post(`/api/v1/disasters/${id}/acknowledge`),
   delete: (id) => apiClient.delete(`/api/v1/disasters/${id}`),
 };
 
@@ -133,6 +134,20 @@ export const reportsApi = {
   delete: (id) => apiClient.delete(`/api/v1/reports/${id}`),
 };
 
+/** Public Telemetry Feeds (USGS / Open-Meteo) */
+export const feedsApi = {
+  scan: (params = {}) => apiClient.post("/api/v1/feeds/scan", null, { params }),
+  weather: (lat, lon) => apiClient.get("/api/v1/feeds/weather", { params: { lat, lon } }),
+};
+
+/** Operational Knowledge Base (SOPs & RAG) */
+export const knowledgeApi = {
+  list: (params = {}) => apiClient.get("/api/v1/knowledge", { params }),
+  get: (id) => apiClient.get(`/api/v1/knowledge/${id}`),
+  create: (payload) => apiClient.post("/api/v1/knowledge", payload),
+  delete: (id) => apiClient.delete(`/api/v1/knowledge/${id}`),
+};
+
 /** Authenticated user profile */
 export const meApi = {
   get: () => apiClient.get("/api/v1/auth/me"),
@@ -142,6 +157,11 @@ export const meApi = {
 /** Backend health check */
 export const healthApi = {
   readiness: () => apiClient.get("/readiness"),
+};
+
+/** System status — all services health */
+export const systemApi = {
+  status: () => apiClient.get("/api/v1/system/status"),
 };
 
 export default apiClient;

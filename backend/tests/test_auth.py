@@ -10,8 +10,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.main import app
+from app.main import app as fastapi_app
 from app.db import Base, get_db
+import app.models
 from app.models.user import User
 
 # Configure isolated testing SQLite database
@@ -29,14 +30,14 @@ def override_get_db():
     finally:
         db.close()
 
-app.dependency_overrides[get_db] = override_get_db
+fastapi_app.dependency_overrides[get_db] = override_get_db
 
 class TestAuthentication(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         Base.metadata.drop_all(bind=engine)
         Base.metadata.create_all(bind=engine)
-        cls.client = TestClient(app)
+        cls.client = TestClient(fastapi_app)
         
         # Mock auth rate limiter to always allow requests during unit testing
         from app.core.rate_limit import auth_rate_limiter
@@ -47,6 +48,7 @@ class TestAuthentication(unittest.TestCase):
     def tearDownClass(cls):
         from app.core.rate_limit import auth_rate_limiter
         auth_rate_limiter.is_allowed = cls._original_is_allowed
+        fastapi_app.dependency_overrides.clear()
         
         # Dispose connection pool to release test SQLite file lock on Windows
         engine.dispose()

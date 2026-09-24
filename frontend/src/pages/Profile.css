@@ -1,4 +1,4 @@
-﻿.profile-root {
+.profile-root {
   padding: 32px;
   display: flex;
   flex-direction: column;
@@ -115,6 +115,15 @@
   gap: 16px;
 }
 @media (max-width: 700px) {
+  .profile-root {
+    padding: 16px;
+    gap: 16px;
+  }
+  .profile-header {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
   .profile-fields { grid-template-columns: 1fr; }
 }
 

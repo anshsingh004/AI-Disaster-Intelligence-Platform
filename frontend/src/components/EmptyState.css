@@ -1,0 +1,64 @@
+.empty-state-root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 24px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.empty-state-compact {
+  padding: 24px 16px;
+}
+
+.empty-state-icon-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  background: var(--surface-container-high);
+  border: 1px solid var(--outline-variant);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  color: var(--secondary);
+  position: relative;
+  box-shadow: var(--shadow-sm);
+}
+
+.empty-state-icon-wrap::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: inherit;
+  border: 1px dashed rgba(142, 112, 107, 0.3);
+  animation: spin 20s linear infinite;
+}
+
+.empty-state-icon {
+  font-size: 28px !important;
+  color: var(--secondary);
+}
+
+.empty-state-title {
+  font-family: var(--font-manrope);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--on-surface);
+  margin-bottom: 6px;
+  letter-spacing: -0.01em;
+}
+
+.empty-state-subtitle {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  max-width: 380px;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+.empty-state-action {
+  margin-top: 4px;
+}

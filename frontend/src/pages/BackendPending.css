@@ -1,4 +1,4 @@
-﻿.bp-root {
+.bp-root {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -179,3 +179,23 @@
   justify-content: center;
   text-align: center;
 }
+
+@media (max-width: 600px) {
+  .bp-root {
+    padding: 20px 12px;
+  }
+  .bp-card {
+    padding: 32px 16px;
+    gap: 24px;
+  }
+  .bp-title {
+    font-size: 20px;
+  }
+  .bp-actions {
+    width: 100%;
+  }
+  .bp-actions button {
+    width: 100%;
+  }
+}
+

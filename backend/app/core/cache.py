@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 _memory_cache = {}
 
 def get_cache(key: str) -> Optional[Any]:
-    """Retrieves a cached JSON payload, falling back to local memory if Redis is offline."""
+    """Retrieves a cached JSON payload. Returns None if Redis is offline or disabled."""
     client = get_redis_client()
     if client:
         try:
@@ -19,7 +19,7 @@ def get_cache(key: str) -> Optional[Any]:
         except Exception as e:
             logger.warning(f"Redis Cache GET failure: {str(e)}")
             
-    return _memory_cache.get(key)
+    return None
 
 def set_cache(key: str, value: Any, expire_seconds: int = 300) -> None:
     """Stores a serialized JSON value in the cache with a specific expiration TTL."""
@@ -30,8 +30,6 @@ def set_cache(key: str, value: Any, expire_seconds: int = 300) -> None:
             return
         except Exception as e:
             logger.warning(f"Redis Cache SET failure: {str(e)}")
-            
-    _memory_cache[key] = value
 
 def delete_cache(key: str) -> None:
     """Evicts a key from the cache."""
@@ -42,8 +40,6 @@ def delete_cache(key: str) -> None:
             return
         except Exception as e:
             logger.warning(f"Redis Cache DELETE failure: {str(e)}")
-            
-    _memory_cache.pop(key, None)
 
 def invalidate_disaster_cache() -> None:
     """Evicts all cached disaster lists to ensure data consistency after inserts."""
@@ -58,9 +54,4 @@ def invalidate_disaster_cache() -> None:
             return
         except Exception as e:
             logger.warning(f"Redis Cache invalidation failure: {str(e)}")
-            
-    # Local memory invalidation
-    keys_to_del = [k for k in _memory_cache.keys() if k.startswith("disasters_list:")]
-    for k in keys_to_del:
-        _memory_cache.pop(k, None)
-    logger.info(f"Invalidated {len(keys_to_del)} local cache keys for disasters list.")
+

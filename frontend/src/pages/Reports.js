@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import "./Reports.css";
 import { reportsApi, disastersApi } from "../services/api";
+import { useNotifications } from "../context/NotificationContext";
+import EmptyState from "../components/EmptyState";
 
 const TYPE_OPTIONS = ["All Types", "Wildfire", "Flood Warning", "Seismic Activity", "Cyclone", "Fire", "Flood", "Earthquake"];
 const RISK_OPTIONS = ["All Risks", "Critical", "High", "Medium", "Low"];
@@ -34,6 +36,10 @@ export default function Reports({ onNavigate, user }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Expandable row state for AI report sections
+  const [expandedRow, setExpandedRow] = useState(null);
+
+  const { addNotification } = useNotifications();
   const canDelete = user?.role === "EOC_LEAD" || user?.role === "ADMINISTRATOR";
 
   const fetchReports = useCallback(async (currentPage = 1) => {
@@ -79,7 +85,7 @@ export default function Reports({ onNavigate, user }) {
     setGenForm({ disaster_id: "", type: "", location: "", summary: "" });
     setGenError("");
     try {
-      const res = await disastersApi.list({ limit: 20, sort_by: "created_at", order: "desc" });
+      const res = await disastersApi.list({ limit: 20, sort_by: "created_at", order: "desc", refresh: true });
       setDisasters(res.data.data?.items || []);
     } catch (err) {
       setDisasters([]);
@@ -102,6 +108,11 @@ export default function Reports({ onNavigate, user }) {
       });
       setGenerating(false);
       fetchReports(page);
+      addNotification({
+        type: "report",
+        title: `Report Generated — ${genForm.type}`,
+        message: `Location: ${genForm.location}`,
+      });
     } catch (err) {
       const msg = err.response?.data?.detail || "Failed to create report.";
       setGenError(msg);
@@ -195,62 +206,142 @@ export default function Reports({ onNavigate, user }) {
               </tr>
             ) : reports.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ textAlign: "center", padding: "32px 0", color: "var(--on-surface-variant)", fontSize: "13px" }}>
-                  No reports found. Generate your first report above.
+                <td colSpan={7} style={{ padding: "20px 0" }}>
+                  <EmptyState
+                    icon="description"
+                    title="No Incident Reports Found"
+                    subtitle={search || typeFilter !== "All Types" || riskFilter !== "All Risks" || statusFilter !== "All Statuses"
+                      ? "No incident reports match your active search or filter criteria."
+                      : "No situational intelligence reports have been compiled yet."}
+                    actionLabel={search || typeFilter !== "All Types" || riskFilter !== "All Risks" || statusFilter !== "All Statuses" ? "Clear Filters" : undefined}
+                    onAction={() => {
+                      setSearch("");
+                      setTypeFilter("All Types");
+                      setRiskFilter("All Risks");
+                      setStatusFilter("All Statuses");
+                      setPage(1);
+                    }}
+                    compact
+                  />
                 </td>
               </tr>
             ) : (
               reports.map((r) => (
-                <tr key={r.id} className="reports-row">
-                  <td className="reports-id">{r.report_code}</td>
-                  <td>
-                    <div className="reports-type-cell">
-                      <span className="reports-type-icon">
-                        <span className="material-symbols-outlined">{riskIcon(r.type)}</span>
+                <React.Fragment key={r.id}>
+                  <tr
+                    className={`reports-row${expandedRow === r.id ? " reports-row-expanded" : ""}`}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setExpandedRow(expandedRow === r.id ? null : r.id)}
+                  >
+                    <td className="reports-id">{r.report_code}</td>
+                    <td>
+                      <div className="reports-type-cell">
+                        <span className="reports-type-icon">
+                          <span className="material-symbols-outlined">{riskIcon(r.type)}</span>
+                        </span>
+                        {r.type}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`badge badge-${r.risk}`}>
+                        {r.risk?.charAt(0).toUpperCase() + r.risk?.slice(1)}
                       </span>
-                      {r.type}
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`badge badge-${r.risk}`}>
-                      {r.risk?.charAt(0).toUpperCase() + r.risk?.slice(1)}
-                    </span>
-                  </td>
-                  <td className="reports-location">{r.location}</td>
-                  <td className="reports-time">
-                    {r.created_at ? new Date(r.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
-                  </td>
-                  <td>
-                    <span className={`badge badge-${r.status}`}>
-                      {r.status?.charAt(0).toUpperCase() + r.status?.slice(1)}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      <button
-                        className="btn-icon"
-                        id={`btn-view-${r.report_code}`}
-                        onClick={() => onNavigate("disaster-center")}
-                        aria-label="View report"
-                        title="View incident"
-                      >
-                        <span className="material-symbols-outlined">chevron_right</span>
-                      </button>
-                      {canDelete && (
+                    </td>
+                    <td className="reports-location">{r.location}</td>
+                    <td className="reports-time">
+                      {r.created_at ? new Date(r.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+                    </td>
+                    <td>
+                      <span className={`badge badge-${r.status}`}>
+                        {r.status?.charAt(0).toUpperCase() + r.status?.slice(1)}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", gap: 4 }} onClick={e => e.stopPropagation()}>
                         <button
                           className="btn-icon"
-                          id={`btn-delete-${r.report_code}`}
-                          onClick={() => setDeleteTarget(r)}
-                          aria-label="Delete report"
-                          title="Delete report"
-                          style={{ color: "var(--error)" }}
+                          id={`btn-expand-${r.report_code}`}
+                          onClick={() => setExpandedRow(expandedRow === r.id ? null : r.id)}
+                          aria-label="Expand report"
+                          title={expandedRow === r.id ? "Collapse" : "View full report"}
                         >
-                          <span className="material-symbols-outlined">delete</span>
+                          <span className="material-symbols-outlined">
+                            {expandedRow === r.id ? "expand_less" : "expand_more"}
+                          </span>
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+                        {canDelete && (
+                          <button
+                            className="btn-icon"
+                            id={`btn-delete-${r.report_code}`}
+                            onClick={() => setDeleteTarget(r)}
+                            aria-label="Delete report"
+                            title="Delete report"
+                            style={{ color: "var(--error)" }}
+                          >
+                            <span className="material-symbols-outlined">delete</span>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                  {expandedRow === r.id && (
+                    <tr className="reports-detail-row">
+                      <td colSpan={7} style={{ padding: 0 }}>
+                        <div className="reports-detail-panel">
+                          <div className="rdp-header">
+                            <span className="material-symbols-outlined rdp-header-icon">description</span>
+                            <div>
+                              <p className="rdp-title">AI Intelligence Report — {r.report_code}</p>
+                              <p className="rdp-sub">Linked Incident #{r.disaster_id} · Generated {r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</p>
+                            </div>
+                          </div>
+                          {r.executive_summary ? (
+                            <div className="rdp-sections">
+                              {[
+                                { key: "executive_summary",      label: "Executive Summary",       icon: "summarize" },
+                                { key: "situation_analysis",     label: "Situation Analysis",      icon: "analytics" },
+                                { key: "disaster_classification",label: "Disaster Classification", icon: "category" },
+                                { key: "risk_assessment",        label: "Risk Assessment",         icon: "shield" },
+                                { key: "population_impact",      label: "Population Impact",       icon: "groups" },
+                                { key: "infrastructure_impact",  label: "Infrastructure Impact",  icon: "apartment" },
+                                { key: "ai_confidence_note",     label: "AI Confidence",           icon: "smart_toy" },
+                                { key: "forecast",               label: "Forecast / Expected Evolution", icon: "timeline" },
+                                { key: "recommended_actions",    label: "Recommended Actions",    icon: "task_alt" },
+                              ].filter(s => r[s.key]).map(s => (
+                                <div key={s.key} className="rdp-section">
+                                  <div className="rdp-section-header">
+                                    <span className="material-symbols-outlined rdp-section-icon">{s.icon}</span>
+                                    <span className="rdp-section-label">{s.label}</span>
+                                  </div>
+                                  <p className="rdp-section-text">{r[s.key]}</p>
+                                </div>
+                              ))}
+                              {r.data_sources && (() => {
+                                let sources = [];
+                                try { sources = JSON.parse(r.data_sources); } catch {}
+                                return sources.length > 0 ? (
+                                  <div className="rdp-section">
+                                    <div className="rdp-section-header">
+                                      <span className="material-symbols-outlined rdp-section-icon">hub</span>
+                                      <span className="rdp-section-label">Data Sources</span>
+                                    </div>
+                                    <div className="rdp-sources">
+                                      {sources.map(src => (
+                                        <span key={src} className="rdp-source-chip">{src}</span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : null;
+                              })()}
+                            </div>
+                          ) : (
+                            <p className="rdp-no-content">Full AI report content not available for this record. Regenerate the report to produce structured analysis.</p>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))
             )}
           </tbody>

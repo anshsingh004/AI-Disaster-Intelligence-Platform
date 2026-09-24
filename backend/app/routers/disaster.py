@@ -3,12 +3,15 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
 import random
+import logging
 
 from app.db import get_db
 from app.schemas.disaster import DisasterInput, DisasterOutput, DisasterRecord
 from app.schemas.alert import AlertRecord
 from app.schemas.report import ReportRecord, ReportCreate
 from app.services.ml_service import run_disaster_inference
+from app.services.report_service import generate_report_content
+from app.services.llm_service import generate_incident_sitrep, deterministic_fallback_sitrep
 from app.core.response import success_response
 from app.repositories.disaster_repository import DisasterRepository
 from app.core.cache import get_cache, set_cache, invalidate_disaster_cache
@@ -17,6 +20,8 @@ from app.models.report import Report
 from app.models.disaster import Disaster
 from app.dependencies import get_current_user, RequireRole
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 v1_router = APIRouter(prefix="/api/v1", tags=["Disaster Prediction v1"])
 legacy_router = APIRouter(tags=["Disaster Prediction Legacy"])
@@ -32,19 +37,78 @@ def get_disaster_repo(db: Session = Depends(get_db)) -> DisasterRepository:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @v1_router.post("/predict/disaster", response_model=dict, status_code=status.HTTP_201_CREATED)
-def predict_disaster_v1(
+@v1_router.post("/disasters", response_model=dict, status_code=status.HTTP_201_CREATED)
+async def predict_disaster_v1(
     data: DisasterInput,
     repo: DisasterRepository = Depends(get_disaster_repo)
 ):
     """
-    Ingests weather metrics and social sentiment, computes hazard scores,
-    persists the prediction log record, and invalidates list caches.
+    AI-first incident pipeline: ingests sensor data, runs threat correlation,
+    synthesizes a resilient Gemini SITREP with deterministic local fallback,
+    persists disaster + linked alert records, auto-generates full structured reports
+    for HIGH and CRITICAL risk incidents, and invalidates list caches.
     """
+    # 1. Baseline correlation
     result = run_disaster_inference(data)
+
+    # 2. Extract telemetry for SITREP synthesis
+    raw_telemetry = data.raw_telemetry or {
+        "rainfall": data.weather_rainfall,
+        "wind_speed": data.weather_wind_speed,
+        "social_score": data.social_signal_score,
+    }
+
+    # 3. Resilient SITREP generation (never raises 500; executes deterministic fallback on error)
+    try:
+        sitrep = await generate_incident_sitrep(
+            telemetry_data=raw_telemetry,
+            incident_type=result.disaster_type or "hazard",
+            context_notes=f"Initial risk: {result.risk_level}. Location: {data.latitude:.4f}, {data.longitude:.4f}."
+        )
+    except Exception as e:
+        logger.warning(f"Unexpected SITREP error in router: {e}. Executing deterministic fallback.")
+        sitrep = deterministic_fallback_sitrep(raw_telemetry, result.disaster_type or "hazard")
+
+    # 4. Integrate SITREP outputs
+    if sitrep:
+        result.sitrep_summary = sitrep.get("executive_summary")
+        result.recommended_actions = sitrep.get("recommended_actions")
+        if sitrep.get("risk_level") in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
+            result.risk_level = sitrep["risk_level"]
+
+    # 5. Persist incident record
     db_record = repo.create(data, result)
 
-    # Invalidate cache on write
+    # 6. Invalidate cache on write
     invalidate_disaster_cache()
+
+    # 7. Auto-generate structured report for HIGH and CRITICAL incidents
+    if db_record.risk_level in ("HIGH", "CRITICAL"):
+        try:
+            risk_map = {"CRITICAL": "critical", "HIGH": "high", "MEDIUM": "medium", "LOW": "low"}
+            report_code = f"AUTO-{db_record.id}-{random.randint(1000, 9999)}"
+            content = generate_report_content(db_record)
+            if sitrep and sitrep.get("situation_analysis"):
+                content["situation_analysis"] = sitrep["situation_analysis"]
+            if sitrep and sitrep.get("infrastructure_impact"):
+                content["infrastructure_impact"] = sitrep["infrastructure_impact"]
+
+            auto_report = Report(
+                report_code=report_code,
+                disaster_id=db_record.id,
+                type=db_record.disaster_type.capitalize(),
+                risk=risk_map.get(db_record.risk_level, "medium"),
+                location=f"{db_record.latitude:.4f}°N, {db_record.longitude:.4f}°E",
+                status="active",
+                summary=db_record.sitrep_summary or content["executive_summary"][:500],
+                **content,
+            )
+            repo.db.add(auto_report)
+            repo.db.commit()
+            logger.info(f"Auto-generated report {report_code} for {db_record.risk_level} disaster #{db_record.id}")
+        except Exception as e:
+            logger.error(f"Auto-report generation failed for disaster #{db_record.id}: {e}")
+            # Non-fatal: incident creation still succeeds
 
     record_data = DisasterRecord.model_validate(db_record).model_dump(mode="json")
     return success_response(data=record_data)
@@ -61,6 +125,7 @@ def get_disasters_v1(
     sort_by: str = Query("created_at", description="Field to sort results by"),
     order: str = Query("desc", description="Sort direction ('asc' or 'desc')"),
     search: Optional[str] = Query(None, description="Wildcard keyword search on disaster type"),
+    refresh: Optional[bool] = Query(None, description="Force refresh to bypass and rebuild cache"),
     repo: DisasterRepository = Depends(get_disaster_repo)
 ):
     """
@@ -87,10 +152,11 @@ def get_disasters_v1(
         f"min={min_severity}:max={max_severity}:sort={sort_by}:order={order}:search={search}"
     )
 
-    # 3. Check Cache
-    cached_payload = get_cache(cache_key)
-    if cached_payload:
-        return success_response(data=cached_payload)
+    # 3. Check Cache (Bypass if refresh is True)
+    if not refresh:
+        cached_payload = get_cache(cache_key)
+        if cached_payload:
+            return success_response(data=cached_payload)
 
     # 4. Fetch results
     records, total = repo.get_paginated(
@@ -135,6 +201,31 @@ def delete_disaster(
     db.commit()
     invalidate_disaster_cache()
     return success_response(data={"id": disaster_id, "deleted": True})
+
+
+@v1_router.patch("/disasters/{disaster_id}/acknowledge", response_model=dict)
+@v1_router.post("/disasters/{disaster_id}/acknowledge", response_model=dict)
+def acknowledge_disaster(
+    disaster_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Mark a disaster incident as acknowledged by operational staff."""
+    disaster = db.query(Disaster).filter(Disaster.id == disaster_id).first()
+    if not disaster:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Disaster record not found")
+
+    disaster.acknowledged = True
+    db.commit()
+    db.refresh(disaster)
+    invalidate_disaster_cache()
+
+    return success_response(data={
+        "id": disaster_id,
+        "acknowledged": True,
+        "title": disaster.title,
+        "disaster_type": disaster.disaster_type
+    })
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -253,6 +344,7 @@ def create_report(
     """
     Create a new report linked to a disaster record.
     Risk level is automatically derived from the linked disaster.
+    AI-generated structured content (9 sections) is populated automatically.
     Requires authentication.
     """
     # Verify the linked disaster exists
@@ -270,6 +362,9 @@ def create_report(
     # Generate a unique report code
     report_code = f"RPT-{random.randint(1000, 9999)}"
 
+    # Generate structured AI report content
+    content = generate_report_content(disaster)
+
     report = Report(
         report_code=report_code,
         disaster_id=data.disaster_id,
@@ -277,8 +372,9 @@ def create_report(
         risk=risk,
         location=data.location,
         status="active",
-        summary=data.summary,
+        summary=data.summary or content["executive_summary"][:500],
         created_at=datetime.utcnow(),
+        **content,
     )
     db.add(report)
     db.commit()
@@ -308,11 +404,28 @@ def delete_report(
 # ─────────────────────────────────────────────────────────────────────────────
 
 @legacy_router.post("/predict/disaster", response_model=DisasterOutput)
-def predict_disaster_legacy(
+async def predict_disaster_legacy(
     data: DisasterInput,
     repo: DisasterRepository = Depends(get_disaster_repo)
 ):
     result = run_disaster_inference(data)
+    raw_telemetry = data.raw_telemetry or {
+        "rainfall": data.weather_rainfall,
+        "wind_speed": data.weather_wind_speed,
+        "social_score": data.social_signal_score,
+    }
+    try:
+        sitrep = await generate_incident_sitrep(raw_telemetry, result.disaster_type or "hazard")
+        if sitrep:
+            result.sitrep_summary = sitrep.get("executive_summary")
+            result.recommended_actions = sitrep.get("recommended_actions")
+            if sitrep.get("risk_level") in ("LOW", "MEDIUM", "HIGH", "CRITICAL"):
+                result.risk_level = sitrep["risk_level"]
+    except Exception:
+        fallback = deterministic_fallback_sitrep(raw_telemetry, result.disaster_type or "hazard")
+        result.sitrep_summary = fallback.get("executive_summary")
+        result.recommended_actions = fallback.get("recommended_actions")
+
     repo.create(data, result)
     invalidate_disaster_cache()
     return result

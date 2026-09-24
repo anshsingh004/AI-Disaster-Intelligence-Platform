@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import "./DisasterCenter.css";
-import { alertsApi, disastersApi } from "../services/api";
+import { alertsApi, disastersApi, feedsApi } from "../services/api";
 import DisasterMap from "../DisasterMap";
+import { useNotifications } from "../context/NotificationContext";
+import EmptyState from "../components/EmptyState";
+import SitrepDossierDrawer from "../components/SitrepDossierDrawer";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -20,21 +23,26 @@ const timeAgo = (isoStr) => {
 };
 
 const INITIAL_FORM = {
+  disaster_type: "flood",
+  title: "",
   latitude: "",
   longitude: "",
-  weather_rainfall: "",
-  weather_wind_speed: "",
-  social_signal_score: "",
+  weather_rainfall: "80.0",
+  weather_wind_speed: "25.0",
+  social_signal_score: "0.75",
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function DisasterCenter({ user, onNavigate }) {
+export default function DisasterCenter({ user, onNavigate, focusUnacknowledged, onFocusHandled }) {
   const [alerts, setAlerts] = useState([]);
   const [disasters, setDisasters] = useState([]);
   const [activeAlert, setActiveAlert] = useState(null);
   const [aiOpen, setAiOpen] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [dossierIncident, setDossierIncident] = useState(null);
+
+  const { addNotification } = useNotifications();
 
   // New incident form state
   const [newIncidentOpen, setNewIncidentOpen] = useState(false);
@@ -44,26 +52,83 @@ export default function DisasterCenter({ user, onNavigate }) {
 
   // Inline toast for deferred/informational actions
   const [toast, setToast] = useState(null);
+  const [scanningFeeds, setScanningFeeds] = useState(false);
 
   const showToast = useCallback((msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 4500);
   }, []);
 
-  const fetchData = useCallback(async () => {
+  const handleIncidentAcknowledged = (incidentId) => {
+    setDisasters(prev => prev.map(d => d.id === incidentId ? { ...d, acknowledged: true } : d));
+    setAlerts(prev => prev.map(a => a.disaster_id === incidentId ? { ...a, acknowledged: true } : a));
+    if (activeAlert?.disaster_id === incidentId) {
+      setActiveAlert(prev => ({ ...prev, acknowledged: true }));
+    }
+    if (dossierIncident?.id === incidentId) {
+      setDossierIncident(prev => ({ ...prev, acknowledged: true }));
+    }
+    showToast("Incident operational status updated to Acknowledged.");
+  };
+
+  const handleScanPublicFeeds = async () => {
+    setScanningFeeds(true);
     try {
+      const res = await feedsApi.scan({ min_magnitude: 1.0 });
+      const data = res.data?.data || {};
+      const { scanned = 0, new_ingested = 0, events = [] } = data;
+      if (new_ingested > 0) {
+        addNotification({
+          type: "success",
+          title: "Public Feeds Ingested",
+          message: `Identified ${scanned} USGS events. Ingested ${new_ingested} verified emergency incidents with AI SITREPs.`,
+        });
+        await fetchData(events[0]?.id, true);
+      } else {
+        addNotification({
+          type: "info",
+          title: "Feeds Scanned",
+          message: `Scanned ${scanned} USGS seismic feeds. No new incidents to ingest (existing items already tracked).`,
+        });
+      }
+    } catch (err) {
+      addNotification({
+        type: "error",
+        title: "Feed Ingestion Failed",
+        message: err.response?.data?.detail || "Could not complete public feed scan. External network may be unavailable.",
+      });
+    } finally {
+      setScanningFeeds(false);
+    }
+  };
+
+  const fetchData = useCallback(async (selectDisasterId = null, forceRefresh = false) => {
+    try {
+      const params = { limit: 50, sort_by: "created_at", order: "desc" };
+      if (forceRefresh) {
+        params.refresh = true;
+      }
       const [alertsRes, disastersRes] = await Promise.all([
         alertsApi.list({ limit: 50 }),
-        disastersApi.list({ limit: 50, sort_by: "created_at", order: "desc" }),
+        disastersApi.list(params),
       ]);
       const alertItems = alertsRes.data.data?.items || [];
       const disasterItems = disastersRes.data.data?.items || [];
 
       setAlerts(alertItems);
       setDisasters(disasterItems);
-      if (alertItems.length > 0 && !activeAlert) {
-        setActiveAlert(alertItems[0]);
-      }
+      
+      setActiveAlert(prev => {
+        if (selectDisasterId) {
+          const linked = alertItems.find(a => a.disaster_id === selectDisasterId);
+          if (linked) return linked;
+        }
+        if (prev) {
+          const freshActive = alertItems.find(a => a.id === prev.id);
+          if (freshActive) return freshActive;
+        }
+        return alertItems[0] || null;
+      });
     } catch (err) {
       console.error("DisasterCenter fetch failed:", err);
     } finally {
@@ -72,6 +137,15 @@ export default function DisasterCenter({ user, onNavigate }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Auto-select first unacknowledged alert when navigated from Dashboard
+  useEffect(() => {
+    if (focusUnacknowledged && alerts.length > 0 && !loading) {
+      const unacked = alerts.find(a => !a.acknowledged);
+      if (unacked) setActiveAlert(unacked);
+      if (onFocusHandled) onFocusHandled();
+    }
+  }, [focusUnacknowledged, alerts, loading, onFocusHandled]);
 
   // ── Acknowledge alert ──────────────────────────────────────────────────────
 
@@ -89,13 +163,25 @@ export default function DisasterCenter({ user, onNavigate }) {
   // ── New incident form ──────────────────────────────────────────────────────
 
   const handleFormChange = (e) => {
-    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    if (name === "disaster_type") {
+      // Adjust default baseline telemetry based on selected disaster type
+      const defaults = {
+        flood: { weather_rainfall: "85.0", weather_wind_speed: "25.0", social_signal_score: "0.8" },
+        fire: { weather_rainfall: "5.0", weather_wind_speed: "65.0", social_signal_score: "0.75" },
+        earthquake: { weather_rainfall: "0.0", weather_wind_speed: "10.0", social_signal_score: "0.85" },
+        storm: { weather_rainfall: "50.0", weather_wind_speed: "95.0", social_signal_score: "0.7" },
+      };
+      setForm(prev => ({ ...prev, disaster_type: value, ...(defaults[value] || {}) }));
+    } else {
+      setForm(prev => ({ ...prev, [name]: value }));
+    }
     setFormError("");
   };
 
   const handleNewIncidentSubmit = async (e) => {
     e.preventDefault();
-    const { latitude, longitude, weather_rainfall, weather_wind_speed, social_signal_score } = form;
+    const { title, latitude, longitude, weather_rainfall, weather_wind_speed, social_signal_score } = form;
 
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
@@ -104,7 +190,7 @@ export default function DisasterCenter({ user, onNavigate }) {
     const social = parseFloat(social_signal_score);
 
     if ([lat, lng, rainfall, wind, social].some(isNaN)) {
-      setFormError("All fields are required and must be valid numbers.");
+      setFormError("All numerical telemetry fields are required and must be valid numbers.");
       return;
     }
     if (lat < -90 || lat > 90) { setFormError("Latitude must be between -90 and 90."); return; }
@@ -113,22 +199,37 @@ export default function DisasterCenter({ user, onNavigate }) {
 
     setSubmitting(true);
     try {
-      await disastersApi.create({
+      const response = await disastersApi.create({
+        title: title?.trim() || undefined,
         latitude: lat,
         longitude: lng,
         timestamp: new Date().toISOString(),
         weather_rainfall: rainfall,
         weather_wind_speed: wind,
         social_signal_score: social,
+        source_origin: "MANUAL",
       });
+      const newDisaster = response.data.data;
       setNewIncidentOpen(false);
       setForm(INITIAL_FORM);
       setFormError("");
-      await fetchData();
+      await fetchData(newDisaster?.id, true);
       showToast("New incident analyzed and recorded successfully.");
+      // Emit notifications
+      addNotification({
+        type: "incident",
+        title: `Incident Created — ${newDisaster?.disaster_type?.charAt(0).toUpperCase() + newDisaster?.disaster_type?.slice(1) || "Unknown"}`,
+        message: `Risk: ${newDisaster?.risk_level} · Severity: ${Math.round((newDisaster?.severity_score || 0) * 100)}%`,
+      });
+      if (newDisaster?.risk_level === "HIGH" || newDisaster?.risk_level === "CRITICAL") {
+        addNotification({
+          type: "alert",
+          title: `${newDisaster.risk_level} Risk Alert`,
+          message: `${newDisaster.disaster_type} event detected — auto-report generated.`,
+        });
+      }
     } catch (err) {
-      const msg = err.response?.data?.detail || "Failed to create incident. Please check your inputs.";
-      setFormError(msg);
+      setFormError(err.response?.data?.detail || "Submission failed. Please check parameters.");
     } finally {
       setSubmitting(false);
     }
@@ -158,24 +259,26 @@ export default function DisasterCenter({ user, onNavigate }) {
           </span>
         </div>
         <div className="dc-topbar-right">
+          <button
+            id="btn-scan-feeds"
+            className="btn-tonal"
+            onClick={handleScanPublicFeeds}
+            disabled={scanningFeeds}
+            title="Scan live USGS earthquakes and Open-Meteo atmospheric feeds"
+          >
+            <span className={`material-symbols-outlined${scanningFeeds ? " spin" : ""}`}>
+              {scanningFeeds ? "sync" : "rss_feed"}
+            </span>
+            {scanningFeeds ? "Scanning Feeds..." : "Scan Public Feeds"}
+          </button>
           <button id="btn-new-incident" className="btn-primary" onClick={() => setNewIncidentOpen(true)}>
             <span className="material-symbols-outlined">add_circle</span>
             New Incident
           </button>
-          <button id="btn-satellite" className="btn-tonal" onClick={() => showToast("Satellite overlay integration is scheduled for Phase 7.")}>
-            <span className="material-symbols-outlined">satellite_alt</span>
-            Satellite Overlay
-          </button>
-          <button id="btn-broadcast" className="btn-tonal" onClick={() => showToast("Broadcast alerts require real-time infrastructure, scheduled for Phase 7.")}>
-            <span className="material-symbols-outlined">warning</span>
-            Broadcast Alert
-          </button>
-          <button className="btn-icon" aria-label="Refresh" onClick={fetchData}>
-            <span className="material-symbols-outlined">refresh</span>
-          </button>
           <button className="btn-icon" aria-label="View Reports" onClick={() => onNavigate("reports")}>
             <span className="material-symbols-outlined">description</span>
           </button>
+
         </div>
       </header>
 
@@ -214,11 +317,15 @@ export default function DisasterCenter({ user, onNavigate }) {
               Loading incident map...
             </div>
           ) : (
-            <DisasterMap disasters={disasters} onSelectDisaster={handleMapDisasterSelect} />
+            <DisasterMap
+              disasters={disasters}
+              onSelectDisaster={handleMapDisasterSelect}
+              onOpenDossier={(d) => setDossierIncident(d)}
+            />
           )}
 
           <div className="dc-map-controls">
-            <button className="btn-icon dc-map-btn" onClick={fetchData} aria-label="Refresh map">
+            <button className="btn-icon dc-map-btn" onClick={() => fetchData(null, true)} aria-label="Refresh map">
               <span className="material-symbols-outlined">refresh</span>
             </button>
           </div>
@@ -246,9 +353,12 @@ export default function DisasterCenter({ user, onNavigate }) {
                   Loading alerts...
                 </p>
               ) : alerts.length === 0 ? (
-                <p style={{ color: "var(--on-surface-variant)", padding: "24px 16px", textAlign: "center", fontSize: "13px" }}>
-                  No active alerts. System nominal.
-                </p>
+                <EmptyState
+                  icon="shield"
+                  title="No Active Incident Alerts"
+                  subtitle="All operational sectors reporting normal telemetry."
+                  compact
+                />
               ) : (
                 <>
                   {/* Alert selector tabs */}
@@ -353,6 +463,43 @@ export default function DisasterCenter({ user, onNavigate }) {
                           />
                         </div>
                       </div>
+
+                      {/* Open Tactical Dossier Button */}
+                      <button
+                        type="button"
+                        className="btn-tonal"
+                        id="btn-open-dossier"
+                        style={{
+                          width: "100%",
+                          marginTop: "12px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: "8px",
+                          fontSize: "12.5px"
+                        }}
+                        onClick={() => {
+                          const linked = disasters.find(d => d.id === activeAlert.disaster_id);
+                          if (linked) {
+                            setDossierIncident(linked);
+                          } else {
+                            setDossierIncident({
+                              id: activeAlert.disaster_id || activeAlert.id,
+                              title: activeAlert.title,
+                              disaster_type: activeAlert.disaster_type || "hazard",
+                              risk_level: activeAlert.level,
+                              latitude: activeAlert.latitude || 20.0,
+                              longitude: activeAlert.longitude || 78.0,
+                              sitrep_summary: activeAlert.description,
+                              acknowledged: activeAlert.acknowledged,
+                              source_origin: "ALERT_FEED",
+                            });
+                          }
+                        }}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 18 }}>assignment</span>
+                        Open Tactical Dossier
+                      </button>
                     </div>
                   )}
                 </>
@@ -362,16 +509,23 @@ export default function DisasterCenter({ user, onNavigate }) {
         </div>
       </div>
 
+      {/* ── Slide-out Tactical SITREP Dossier Drawer ── */}
+      <SitrepDossierDrawer
+        incident={dossierIncident}
+        onClose={() => setDossierIncident(null)}
+        onAcknowledge={handleIncidentAcknowledged}
+      />
+
       {/* ── New Incident Modal ── */}
       {newIncidentOpen && (
         <div className="modal-overlay" onClick={() => { setNewIncidentOpen(false); setFormError(""); setForm(INITIAL_FORM); }}>
-          <div className="modal-card slide-in" onClick={e => e.stopPropagation()} style={{ maxWidth: 480, width: "100%", gap: 16 }}>
+          <div className="modal-card slide-in" onClick={e => e.stopPropagation()} style={{ maxWidth: 500, width: "100%", gap: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 24, color: "var(--primary)" }}>add_circle</span>
-              <h3 className="modal-title" style={{ margin: 0 }}>Log New Incident</h3>
+              <span className="material-symbols-outlined" style={{ fontSize: 24, color: "var(--primary)" }}>smart_toy</span>
+              <h3 className="modal-title" style={{ margin: 0 }}>Report Incident & Run AI Synthesis</h3>
             </div>
             <p style={{ fontSize: "13px", color: "var(--on-surface-variant)", margin: "0 0 4px" }}>
-              Enter environmental sensor readings to trigger AI hazard analysis.
+              Inject manual field observations or telemetry. The platform will synthesize a tactical SITREP and place the marker on the live map.
             </p>
 
             {formError && (
@@ -381,6 +535,35 @@ export default function DisasterCenter({ user, onNavigate }) {
             )}
 
             <form onSubmit={handleNewIncidentSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div className="signin-field">
+                <label htmlFor="ni-type">Disaster Classification</label>
+                <select
+                  id="ni-type"
+                  name="disaster_type"
+                  className="tech-input"
+                  value={form.disaster_type}
+                  onChange={handleFormChange}
+                >
+                  <option value="flood">Flood / Inundation</option>
+                  <option value="fire">Wildfire / Urban Fire</option>
+                  <option value="earthquake">Earthquake / Seismic</option>
+                  <option value="storm">Severe Weather / Storm</option>
+                </select>
+              </div>
+
+              <div className="signin-field">
+                <label htmlFor="ni-title">Incident Title / Observations</label>
+                <input
+                  id="ni-title"
+                  name="title"
+                  type="text"
+                  className="tech-input"
+                  placeholder="e.g. Low-Lying Riverbank Overtopping"
+                  value={form.title}
+                  onChange={handleFormChange}
+                />
+              </div>
+
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div className="signin-field">
                   <label htmlFor="ni-lat">Latitude</label>
@@ -391,23 +574,27 @@ export default function DisasterCenter({ user, onNavigate }) {
                   <input id="ni-lng" name="longitude" type="number" step="any" className="tech-input" placeholder="e.g. 77.20" value={form.longitude} onChange={handleFormChange} required />
                 </div>
               </div>
-              <div className="signin-field">
-                <label htmlFor="ni-rainfall">Rainfall (mm)</label>
-                <input id="ni-rainfall" name="weather_rainfall" type="number" step="any" min="0" className="tech-input" placeholder="e.g. 150.0" value={form.weather_rainfall} onChange={handleFormChange} required />
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div className="signin-field">
+                  <label htmlFor="ni-rainfall">Rainfall (mm/h)</label>
+                  <input id="ni-rainfall" name="weather_rainfall" type="number" step="any" min="0" className="tech-input" value={form.weather_rainfall} onChange={handleFormChange} required />
+                </div>
+                <div className="signin-field">
+                  <label htmlFor="ni-wind">Wind Speed (km/h)</label>
+                  <input id="ni-wind" name="weather_wind_speed" type="number" step="any" min="0" className="tech-input" value={form.weather_wind_speed} onChange={handleFormChange} required />
+                </div>
               </div>
+
               <div className="signin-field">
-                <label htmlFor="ni-wind">Wind Speed (km/h)</label>
-                <input id="ni-wind" name="weather_wind_speed" type="number" step="any" min="0" className="tech-input" placeholder="e.g. 55.0" value={form.weather_wind_speed} onChange={handleFormChange} required />
-              </div>
-              <div className="signin-field">
-                <label htmlFor="ni-social">Social Signal Score (0.0 – 1.0)</label>
-                <input id="ni-social" name="social_signal_score" type="number" step="0.01" min="0" max="1" className="tech-input" placeholder="e.g. 0.75" value={form.social_signal_score} onChange={handleFormChange} required />
+                <label htmlFor="ni-social">Citizen Social Signal (0.0 – 1.0)</label>
+                <input id="ni-social" name="social_signal_score" type="number" step="0.01" min="0" max="1" className="tech-input" value={form.social_signal_score} onChange={handleFormChange} required />
               </div>
 
               <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
                 <button type="submit" id="btn-submit-incident" className="btn-primary" style={{ flex: 1 }} disabled={submitting}>
                   <span className="material-symbols-outlined">{submitting ? "hourglass_empty" : "radar"}</span>
-                  {submitting ? "Analyzing..." : "Run AI Analysis"}
+                  {submitting ? "Synthesizing SITREP..." : "Submit Incident"}
                 </button>
                 <button
                   type="button"

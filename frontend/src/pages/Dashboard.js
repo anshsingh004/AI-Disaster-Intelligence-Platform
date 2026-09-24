@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import "./Dashboard.css";
-import { disastersApi, alertsApi, healthApi } from "../services/api";
+import { disastersApi, alertsApi, healthApi, feedsApi } from "../services/api";
+import EmptyState from "../components/EmptyState";
 
 // Maps disaster_type to Material Symbol icon name
 const typeIcon = (type) => {
@@ -18,6 +19,28 @@ export default function Dashboard({ user, onNavigate }) {
   const [stats, setStats] = useState({ total: 0, avgConfidence: 0, highRisk: 0, unacknowledged: 0 });
   const [systemStatus, setSystemStatus] = useState({ api: "pending", database: "pending" });
   const [loading, setLoading] = useState(true);
+  const [scanningFeeds, setScanningFeeds] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 4500);
+  };
+
+  const handleScanPublicFeeds = async () => {
+    setScanningFeeds(true);
+    try {
+      const res = await feedsApi.scan({ min_magnitude: 1.0 });
+      const data = res.data?.data || {};
+      const { new_ingested = 0, scanned = 0 } = data;
+      showToast(`Scan complete: ${new_ingested} new tactical events detected (${scanned} total scanned).`);
+      await fetchData();
+    } catch (err) {
+      showToast("Feed scan failed. External networks may be unavailable.");
+    } finally {
+      setScanningFeeds(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -99,13 +122,60 @@ export default function Dashboard({ user, onNavigate }) {
             Global monitoring active · {new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
           </p>
         </div>
-        <div className="dash-welcome-live">
+        <div className="dash-welcome-live" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "10px" }}>
           <div className="dash-live-indicator">
             <span className="pulse-dot" />
             <span>Live Sync Active</span>
           </div>
+          <button
+            id="btn-dash-scan-feeds"
+            className="btn-primary"
+            onClick={handleScanPublicFeeds}
+            disabled={scanningFeeds}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "10px 16px",
+              fontSize: "12px",
+              fontWeight: "700",
+              letterSpacing: "0.8px",
+              textTransform: "uppercase"
+            }}
+          >
+            <span className={`material-symbols-outlined${scanningFeeds ? " spin" : ""}`} style={{ fontSize: "18px" }}>
+              {scanningFeeds ? "radar" : "rss_feed"}
+            </span>
+            {scanningFeeds ? "Scanning Feeds..." : "SCAN PUBLIC FEEDS"}
+          </button>
         </div>
       </div>
+
+      {/* Floating toast notification */}
+      {toast && (
+        <div style={{
+          position: "fixed",
+          top: 24,
+          right: 24,
+          zIndex: 9999,
+          background: "var(--surface-container, #11151c)",
+          border: "1px solid var(--outline-variant, rgba(255,255,255,0.12))",
+          borderLeft: "4px solid var(--primary, #b02614)",
+          borderRadius: "8px",
+          padding: "12px 18px",
+          maxWidth: "380px",
+          fontSize: "13px",
+          color: "var(--on-surface, #f8fafc)",
+          boxShadow: "0 10px 25px rgba(0,0,0,0.8)",
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          animation: "fadeIn 0.2s ease-out"
+        }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 20, color: "var(--primary)" }}>radar</span>
+          <span>{toast}</span>
+        </div>
+      )}
 
       {/* Stats grid */}
       <div className="dash-stats-grid">
@@ -113,7 +183,13 @@ export default function Dashboard({ user, onNavigate }) {
           <button
             key={stat.label}
             className="dash-stat-card card-lift"
-            onClick={() => onNavigate("analytics")}
+            onClick={() => {
+              if (stat.label === "Unacknowledged") {
+                onNavigate("disaster-center", { focusUnacknowledged: true });
+              } else {
+                onNavigate("analytics");
+              }
+            }}
             id={`btn-stat-${stat.label.replace(/ /g, "-").toLowerCase()}`}
           >
             <div className="dash-stat-icon-wrap" style={{ background: `${stat.color}18` }}>
@@ -145,9 +221,14 @@ export default function Dashboard({ user, onNavigate }) {
                 Loading incidents...
               </p>
             ) : disasters.length === 0 ? (
-              <p style={{ color: "var(--on-surface-variant)", padding: "16px", textAlign: "center", fontSize: "13px" }}>
-                No incidents recorded yet.
-              </p>
+              <EmptyState
+                icon="radar"
+                title="No Active Incidents"
+                subtitle="All monitoring grids report nominal environmental signals."
+                actionLabel="Open Disaster Center"
+                onAction={() => onNavigate("disaster-center")}
+                compact
+              />
             ) : (
               disasters.map((inc) => {
                 const badgeLevel = inc.risk_level?.toLowerCase() || "medium";

@@ -1,4 +1,4 @@
-﻿.analytics-root {
+.analytics-root {
   padding: 32px 32px 40px;
   display: flex;
   flex-direction: column;
@@ -238,3 +238,24 @@
   font-weight: 700;
   flex-shrink: 0;
 }
+
+@media (max-width: 768px) {
+  .analytics-root {
+    padding: 16px;
+    gap: 16px;
+  }
+  .analytics-title {
+    font-size: 22px;
+  }
+}
+
+@media (max-width: 580px) {
+  .analytics-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+  .risk-row-name {
+    width: 80px;
+    font-size: 12px;
+  }
+}
+

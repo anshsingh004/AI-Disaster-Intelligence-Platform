@@ -13,8 +13,24 @@ import Reports from "./pages/Reports";
 import Profile from "./pages/Profile";
 import Legal from "./pages/Legal";
 import BackendPending from "./pages/BackendPending";
+import SystemStatus from "./pages/SystemStatus";
+import NotFound from "./pages/NotFound";
 
 import apiClient from "./services/api";
+import { NotificationProvider } from "./context/NotificationContext";
+import useDocumentTitle from "./hooks/useDocumentTitle";
+
+const PAGE_DOC_TITLES = {
+  dashboard: "Operations Dashboard | Terra-Aura",
+  "disaster-center": "Disaster Center & GIS | Terra-Aura",
+  analytics: "Predictive Analytics | Terra-Aura",
+  reports: "Situation Reports | Terra-Aura",
+  profile: "Profile Settings | Terra-Aura",
+  legal: "Legal & Support | Terra-Aura",
+  "system-status": "System Status | Terra-Aura",
+  "backend-pending": "Feature In Progress | Terra-Aura",
+  "not-found": "404 - Sector Not Found | Terra-Aura",
+};
 
 // Decodes JWT payload properties to restore roles/emails when metadata is missing
 function parseJwt(token) {
@@ -30,20 +46,18 @@ function parseJwt(token) {
   }
 }
 
-
-
-function renderPage(page, user, navigate, logout, updateUser) {
+function renderPage(page, user, navigate, logout, updateUser, focusUnacknowledged, setFocusUnacknowledged) {
   switch (page) {
     case "dashboard":        return <Dashboard        user={user}    onNavigate={navigate} />;
-    case "disaster-center":  return <DisasterCenter   user={user}    onNavigate={navigate} />;
+    case "disaster-center":  return <DisasterCenter   user={user}    onNavigate={navigate} focusUnacknowledged={focusUnacknowledged} onFocusHandled={() => setFocusUnacknowledged(false)} />;
     case "analytics":        return <Analytics                       onNavigate={navigate} />;
     case "reports":          return <Reports          user={user}    onNavigate={navigate} />;
     case "profile":          return <Profile          user={user}    onNavigate={navigate} onLogout={logout} onUserUpdate={updateUser} />;
     case "legal":            return <Legal                           onNavigate={navigate} />;
-    case "support":          return <BackendPending                  onNavigate={navigate} />;
-    case "system-status":    return <BackendPending                  onNavigate={navigate} />;
+    case "system-status":    return <SystemStatus                    onNavigate={navigate} />;
     case "backend-pending":  return <BackendPending                  onNavigate={navigate} />;
-    default:                 return <BackendPending                  onNavigate={navigate} />;
+    case "not-found":        return <NotFound                        onNavigate={navigate} />;
+    default:                 return <NotFound                        onNavigate={navigate} />;
   }
 }
 
@@ -51,6 +65,13 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [activePage, setActivePage] = useState("dashboard");
   const [initializing, setInitializing] = useState(true);
+  const [focusUnacknowledged, setFocusUnacknowledged] = useState(false);
+
+  useDocumentTitle(
+    !user
+      ? "Sign In | Terra-Aura"
+      : PAGE_DOC_TITLES[activePage] || "Terra-Aura | AI Disaster Intelligence Platform"
+  );
 
   useEffect(() => {
     // Bind expired token interceptor to logout the client immediately
@@ -129,8 +150,13 @@ export default function App() {
     logoutCleanly();
   };
 
-  const navigate = (page) => {
+  const navigate = (page, opts = {}) => {
     if (page === "logout") { logout(); return; }
+    // "support" removed — redirect to legal which has Contact & Support section
+    if (page === "support") { setActivePage("legal"); return; }
+    if (page === "disaster-center" && opts.focusUnacknowledged) {
+      setFocusUnacknowledged(true);
+    }
     setActivePage(page);
   };
 
@@ -165,19 +191,23 @@ export default function App() {
 
   // 3. Signed in → shell layout
   return (
-    <div className="app-shell">
-      <Sidebar active={activePage} onNavigate={navigate} />
+    <NotificationProvider>
+      <div className="app-shell">
+        <Sidebar active={activePage} onNavigate={navigate} />
 
-      <div className="app-main">
-        {/* DisasterCenter has its own topbar built in */}
-        {activePage !== "disaster-center" && (
-          <Topbar user={user} activePage={activePage} onNavigate={navigate} />
-        )}
+        <div className="app-main">
+          {/* DisasterCenter has its own topbar built in */}
+          {activePage !== "disaster-center" && (
+            <Topbar user={user} activePage={activePage} onNavigate={navigate} />
+          )}
 
-        <div className="app-content">
-          {renderPage(activePage, user, navigate, logout, updateUser)}
+          <div className="app-content">
+            {renderPage(activePage, user, navigate, logout, updateUser, focusUnacknowledged, setFocusUnacknowledged)}
+          </div>
         </div>
       </div>
-    </div>
+    </NotificationProvider>
   );
 }
+
+

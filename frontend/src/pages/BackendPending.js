@@ -1,4 +1,4 @@
-﻿import React from "react";
+import React from "react";
 import "./BackendPending.css";
 
 export default function BackendPending({ onNavigate }) {

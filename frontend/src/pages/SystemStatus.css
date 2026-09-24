@@ -1,0 +1,50 @@
+.ss-root { padding: 24px; max-width: 1100px; width: 100%; box-sizing: border-box; }
+.ss-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; gap: 16px; flex-wrap: wrap; }
+.ss-title { font-family: var(--font-manrope); font-size: 24px; font-weight: 800; color: var(--on-surface); margin: 0 0 4px; }
+.ss-sub { font-size: 13px; color: var(--on-surface-variant); margin: 0; }
+.ss-refresh-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--surface-container-low); border: 1px solid var(--outline-variant); border-radius: var(--radius-full); cursor: pointer; font-family: var(--font-manrope); font-size: 13px; font-weight: 600; color: var(--on-surface); transition: all 0.15s; }
+.ss-refresh-btn:hover { background: var(--surface-container); border-color: var(--outline); }
+.ss-refresh-btn .material-symbols-outlined { font-size: 16px !important; }
+.ss-refresh-btn.spinning .material-symbols-outlined { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.ss-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px; margin-bottom: 24px; }
+.ss-card { background: var(--surface-container-lowest); border: 1px solid var(--outline-variant); border-radius: var(--radius-lg); padding: 20px; display: flex; align-items: center; gap: 16px; transition: box-shadow 0.2s; }
+.ss-card:hover { box-shadow: var(--shadow-md); }
+.ss-card-icon { width: 44px; height: 44px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.ss-card-icon.online { background: rgba(0,200,100,0.12); }
+.ss-card-icon.offline { background: rgba(186,26,26,0.12); }
+.ss-card-icon.warning { background: rgba(200,130,0,0.12); }
+.ss-card-icon.online .material-symbols-outlined { color: #00c864; font-size: 22px !important; }
+.ss-card-icon.offline .material-symbols-outlined { color: var(--error); font-size: 22px !important; }
+.ss-card-icon.warning .material-symbols-outlined { color: #c88200; font-size: 22px !important; }
+.ss-card-body { flex: 1; min-width: 0; }
+.ss-card-label { font-size: 11px; font-weight: 600; color: var(--on-surface-variant); text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 4px; }
+.ss-card-value { font-size: 15px; font-weight: 700; color: var(--on-surface); margin: 0; }
+.ss-card-status { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-full); font-size: 11px; font-weight: 700; }
+.ss-card-status.online { background: rgba(0,200,100,0.12); color: #00a852; }
+.ss-card-status.offline { background: rgba(186,26,26,0.1); color: var(--error); }
+.ss-card-status.connected { background: rgba(0,200,100,0.12); color: #00a852; }
+.ss-card-status.disconnected { background: rgba(186,26,26,0.1); color: var(--error); }
+.ss-card-status.active { background: rgba(0,200,100,0.12); color: #00a852; }
+.ss-card-status.healthy { background: rgba(0,200,100,0.12); color: #00a852; }
+.ss-meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 12px; margin-bottom: 24px; }
+.ss-meta-card { background: var(--surface-container-lowest); border: 1px solid var(--outline-variant); border-radius: var(--radius-lg); padding: 16px 20px; }
+.ss-meta-label { font-size: 11px; font-weight: 600; color: var(--on-surface-variant); text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 6px; }
+.ss-meta-value { font-size: 18px; font-weight: 800; color: var(--on-surface); margin: 0; font-family: var(--font-manrope); }
+.ss-meta-unit { font-size: 12px; font-weight: 500; color: var(--on-surface-variant); }
+.ss-latency-bar { height: 6px; background: var(--outline-variant); border-radius: 3px; margin-top: 8px; overflow: hidden; }
+.ss-latency-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #00c864, #00a852); transition: width 0.4s ease; }
+.ss-latency-fill.slow { background: linear-gradient(90deg, #c88200, #e09800); }
+.ss-latency-fill.critical { background: linear-gradient(90deg, var(--error), #c42020); }
+.ss-footer { font-size: 11px; color: var(--on-surface-variant); border-top: 1px solid var(--outline-variant); padding-top: 16px; }
+.ss-loading { display: flex; align-items: center; justify-content: center; min-height: 300px; color: var(--on-surface-variant); font-size: 14px; gap: 10px; }
+
+@media (max-width: 768px) {
+  .ss-root {
+    padding: 16px;
+  }
+  .ss-title {
+    font-size: 20px;
+  }
+}
+

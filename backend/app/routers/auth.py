@@ -63,7 +63,7 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
     return success_response(data=UserResponse.model_validate(user).model_dump())
 
 @router.post("/login", response_model=dict)
-def login(request: Request, response: Response, data: LoginInput, db: Session = Depends(get_db)):
+async def login(request: Request, response: Response, db: Session = Depends(get_db)):
     client_ip = request.client.host if request.client else "0.0.0.0"
     
     # 1. Enforce Rate Limiting
@@ -73,11 +73,33 @@ def login(request: Request, response: Response, data: LoginInput, db: Session = 
             detail="Too many authentication attempts. Please wait 5 minutes."
         )
         
+    content_type = request.headers.get("content-type", "")
+    email = None
+    password = None
+
+    if "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
+        form = await request.form()
+        email = form.get("username") or form.get("email")
+        password = form.get("password")
+    else:
+        try:
+            body = await request.json()
+            email = body.get("username") or body.get("email")
+            password = body.get("password")
+        except Exception:
+            pass
+
+    if not email or not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid email or password"
+        )
+        
     user_repo = UserRepository(db)
-    user = user_repo.get_by_email(data.email)
+    user = user_repo.get_by_email(email)
     
     if not user:
-        user_repo.log_security_event(data.email, "LOGIN_FAILED_NO_USER", client_ip)
+        user_repo.log_security_event(email, "LOGIN_FAILED_NO_USER", client_ip)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid email or password"
@@ -93,7 +115,7 @@ def login(request: Request, response: Response, data: LoginInput, db: Session = 
         )
 
     # 3. Verify Password credentials
-    if not verify_password(data.password, user.hashed_password):
+    if not verify_password(password, user.hashed_password):
         user_repo.increment_failed_attempts(user)
         user_repo.log_security_event(user.email, "LOGIN_FAILED_BAD_PASSWORD", client_ip)
         

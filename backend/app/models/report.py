@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, CheckConstraint
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, CheckConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.db import Base
@@ -15,6 +15,18 @@ class Report(Base):
     status = Column(String, nullable=False, index=True)
     summary = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # AI-generated structured report sections (all nullable for backwards compatibility)
+    executive_summary = Column(Text, nullable=True)
+    situation_analysis = Column(Text, nullable=True)
+    disaster_classification = Column(Text, nullable=True)
+    risk_assessment = Column(Text, nullable=True)
+    population_impact = Column(Text, nullable=True)
+    infrastructure_impact = Column(Text, nullable=True)
+    ai_confidence_note = Column(Text, nullable=True)
+    forecast = Column(Text, nullable=True)
+    recommended_actions = Column(Text, nullable=True)
+    data_sources = Column(Text, nullable=True)  # JSON-encoded list of data source names
 
     # Relationship back to Disaster model
     disaster = relationship("Disaster", backref="reports")

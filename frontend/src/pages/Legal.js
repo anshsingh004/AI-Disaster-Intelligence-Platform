@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import "./Legal.css";
 
 const SECTIONS = [
@@ -9,23 +9,48 @@ const SECTIONS = [
     content: [
       {
         heading: "1. Scope of Service",
-        text: "Terra-Aura Intelligence provides decision-support intelligence tools and disaster monitoring capabilities. This platform is designed for trained professionals and authorized personnel only."
+        body: (
+          <p className="legal-section-text">
+            Terra-Aura Intelligence provides decision-support intelligence tools and disaster monitoring capabilities.
+            This platform is designed for trained professionals and authorized personnel only.
+          </p>
+        )
       },
       {
         heading: "2. Disclaimer of Official Authority",
-        text: "This platform provides decision-support intelligence, not official emergency orders. Users should verify critical decisions with government, weather, and emergency response authorities before taking action."
+        body: (
+          <p className="legal-section-text">
+            This platform provides decision-support intelligence, not official emergency orders. Users should verify
+            critical decisions with government, weather, and emergency response authorities before taking action.
+          </p>
+        )
       },
       {
         heading: "3. Data Accuracy",
-        text: "While Terra-Aura employs advanced AI models with up to 94% accuracy, all predictions and risk assessments are probabilistic in nature. No guarantee of absolute accuracy is made."
+        body: (
+          <p className="legal-section-text">
+            While Terra-Aura employs advanced AI models with high predictive scoring, all predictions and risk assessments
+            are probabilistic in nature. No guarantee of absolute accuracy is made.
+          </p>
+        )
       },
       {
         heading: "4. Authorized Use Only",
-        text: "Access to this platform is restricted to personnel with appropriate clearance levels. Unauthorized use, sharing of credentials, or data exfiltration is strictly prohibited."
+        body: (
+          <p className="legal-section-text">
+            Access to this platform is restricted to personnel with appropriate clearance levels. Unauthorized use,
+            sharing of credentials, or data exfiltration is strictly prohibited.
+          </p>
+        )
       },
       {
         heading: "5. Modifications",
-        text: "Terra-Aura reserves the right to update these terms at any time. Continued use of the platform constitutes acceptance of updated terms."
+        body: (
+          <p className="legal-section-text">
+            Terra-Aura reserves the right to update these terms at any time. Continued use of the platform constitutes
+            acceptance of updated terms.
+          </p>
+        )
       }
     ]
   },
@@ -36,19 +61,39 @@ const SECTIONS = [
     content: [
       {
         heading: "Data We Collect",
-        text: "We collect account information, contact details, disaster report submissions, and operational telemetry necessary to provide alerts, predictions, and platform support."
+        body: (
+          <p className="legal-section-text">
+            We collect account credentials, contact details, incident telemetry, and operational audit logs necessary
+            to deliver alerts, threat assessments, and security compliance.
+          </p>
+        )
       },
       {
         heading: "How We Use Data",
-        text: "Collected data is used solely to power the platform, improve AI models, and deliver real-time intelligence to authorized users. Personal information is never sold to third parties."
+        body: (
+          <p className="legal-section-text">
+            Collected data is used solely to power the platform, improve inference accuracy, and deliver real-time
+            intelligence to authorized responders. Personal information is never sold to third parties.
+          </p>
+        )
       },
       {
         heading: "Data Retention",
-        text: "Incident data is retained for 5 years for audit and research purposes. Personal account data is retained for the duration of active clearance and deleted within 90 days of deactivation."
+        body: (
+          <p className="legal-section-text">
+            Incident records are retained for 5 years for audit and crisis research. Operational user logs are retained
+            for the duration of active clearance and purged within 90 days of account deactivation.
+          </p>
+        )
       },
       {
         heading: "Your Rights",
-        text: "Authorized users may request export or deletion of their personal data at any time by contacting privacy@terra-aura.dev. Requests are processed within 30 days."
+        body: (
+          <p className="legal-section-text">
+            Authorized users may request export or deletion of their personal telemetry at any time by contacting{" "}
+            <a href="mailto:privacy@terra-aura.org" className="legal-link">privacy@terra-aura.org</a>. Requests are processed within 30 days.
+          </p>
+        )
       }
     ]
   },
@@ -59,23 +104,47 @@ const SECTIONS = [
     content: [
       {
         heading: "Emergency Operations Desk",
-        text: "Available 24/7 for critical incident escalation and system failures. Phone: +91 90000 00000"
+        body: (
+          <p className="legal-section-text">
+            Available 24/7 for critical incident escalation and system failures. Phone:{" "}
+            <a href="tel:+18005550199" className="legal-link">+1 (800) 555-0199</a>
+          </p>
+        )
       },
       {
-        heading: "General Support",
-        text: "For platform issues, data corrections, and deployment questions: support@terra-aura.dev"
+        heading: "General Platform Support",
+        body: (
+          <p className="legal-section-text">
+            For platform issues, telemetry calibration, and deployment questions:{" "}
+            <a href="mailto:support@terra-aura.org" className="legal-link">support@terra-aura.org</a>
+          </p>
+        )
       },
       {
-        heading: "Operations",
-        text: "For deployment coordination and field operations: operations@terra-aura.dev"
+        heading: "Tactical Field Operations",
+        body: (
+          <p className="legal-section-text">
+            For deployment coordination and field team dispatch protocols:{" "}
+            <a href="mailto:operations@terra-aura.org" className="legal-link">operations@terra-aura.org</a>
+          </p>
+        )
       },
       {
-        heading: "Privacy Requests",
-        text: "Data export, deletion, or privacy concern requests: privacy@terra-aura.dev"
+        heading: "Privacy & Compliance Office",
+        body: (
+          <p className="legal-section-text">
+            Data export, deletion, or privacy verification requests:{" "}
+            <a href="mailto:privacy@terra-aura.org" className="legal-link">privacy@terra-aura.org</a>
+          </p>
+        )
       },
       {
-        heading: "Registered Office",
-        text: "Terra-Aura Intelligence Platform, Sector 4 Operations Hub, New Delhi — 110001, India"
+        heading: "Registered Operations Center",
+        body: (
+          <p className="legal-section-text">
+            Terra-Aura Intelligence Platform, Emergency Response Command Hub, Sector 4, New Delhi — 110001
+          </p>
+        )
       }
     ]
   }
@@ -90,9 +159,9 @@ export default function Legal() {
       <header className="legal-header">
         <div>
           <h1 className="legal-title">Legal & Support</h1>
-          <p className="legal-sub">Platform policies and contact information — Aegis AI compliance framework.</p>
+          <p className="legal-sub">Platform policies, compliance standards, and verified contact channels.</p>
         </div>
-        <span className="legal-version-chip">v2.4.1 · Oct 2024</span>
+        <span className="legal-version-chip">v1.0.0 · Production</span>
       </header>
 
       <div className="legal-layout">
@@ -122,17 +191,13 @@ export default function Legal() {
             {current.content.map((section, i) => (
               <div key={i} className="legal-section-item">
                 <h3 className="legal-section-heading">{section.heading}</h3>
-                <p className="legal-section-text">{section.text}</p>
+                {section.body}
               </div>
             ))}
           </div>
 
           <div className="legal-footer">
-            <p className="legal-last-updated">Last updated: October 2024</p>
-            <button className="btn-tonal">
-              <span className="material-symbols-outlined">download</span>
-              Download PDF
-            </button>
+            <p className="legal-last-updated">Status: Active & Verified</p>
           </div>
         </div>
       </div>

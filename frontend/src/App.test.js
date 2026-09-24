@@ -1,8 +1,9 @@
 import { render, screen } from '@testing-library/react';
-import App from './App';
+import Sidebar from './components/Sidebar';
 
-test('renders learn react link', () => {
-  render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+test('renders Terra-Aura brand in sidebar', () => {
+  render(<Sidebar active="dashboard" onNavigate={() => {}} />);
+  const brandElement = screen.getByText(/Terra-Aura/i);
+  expect(brandElement).toBeInTheDocument();
 });
+

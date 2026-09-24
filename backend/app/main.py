@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-# Ensure project root is in path for ml and app package resolution
+# Ensure project root is in path for app package resolution
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -14,6 +14,8 @@ from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.exceptions import register_exception_handlers
 from app.routers.disaster import legacy_router, v1_router
+from app.routers.knowledge import router as knowledge_router
+from app.routers.feeds import router as feeds_router
 from app.routers.auth import router as auth_router
 from app.routers.health import router as health_router
 from app.db import wait_for_db
@@ -88,4 +90,6 @@ register_exception_handlers(app)
 app.include_router(health_router)
 app.include_router(legacy_router)
 app.include_router(v1_router)
+app.include_router(knowledge_router)
+app.include_router(feeds_router)
 app.include_router(auth_router)
