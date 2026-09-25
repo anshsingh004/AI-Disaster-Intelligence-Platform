@@ -26,15 +26,15 @@ An enterprise-grade, full-stack disaster detection, risk assessment, and geospat
 ```mermaid
 graph LR
     S[<b>SITUATION</b><br/>Emergency centers face sensor fragmentation, triage delays, and heavy fragile ML stacks] --> T[<b>TASK</b><br/>Build a lightweight, zero-crash, trigger-based intelligence platform]
-    T --> A[<b>ACTIONS</b><br/>Phases 1–5: UI Polish, Purge 2GB ML bloat, Dual-Engine Gemini Synthesizer, USGS feeds, GIS Map]
+    T --> A[<b>ACTIONS</b><br/>Phases 1–5: UI Polish, Dual-Engine Gemini Synthesizer, USGS feeds, GIS Map]
     A --> R[<b>RESULTS</b><br/>95% smaller container, sub-second boot, 25/25 passing unit tests, zero 500 errors]
 ```
 
 - **Situation:** Natural disasters (flash floods, wildfires, earthquakes) overwhelm emergency operations centers (EOCs) due to data fragmentation between weather stations and seismic feeds, high triage latency, and fragile monolithic ML stacks that crash under resource exhaustion.
 - **Task:** Engineer a production-ready, resilient disaster intelligence platform with zero-key public telemetry ingestion, sub-second inference, guaranteed AI SITREP generation, and interactive GIS mapping.
 - **Actions:**
-  - **Phase 1 & 1.5:** Dark tactical responsive interface (360px to 4K), removed dead OAuth buttons, aligned auth payload to `application/x-www-form-urlencoded` conforming to FastAPI OAuth2 specifications, and patched bcrypt for Python 3.13.
-  - **Phase 2:** Stripped 2GB+ of data science bloat (`torch`, `onnxruntime`, `sklearn`, `pandas`), modernized the PostgreSQL schema with Alembic migrations (`b4d2f6c8e0a1`), and built a lightweight TTL-cached correlation engine.
+  - **Phase 1 & 1.5:** Dark tactical responsive interface (360px to 4K), aligned auth payload to `application/x-www-form-urlencoded` conforming to FastAPI OAuth2 specifications, and patched bcrypt for Python 3.13.
+  - **Phase 2:** Modernized the PostgreSQL schema with Alembic migrations (`b4d2f6c8e0a1`), and built a lightweight TTL-cached correlation engine.
   - **Phase 3:** Built a resilient hybrid AI synthesizer using Google Gemini 2.5 Flash paired with an instant deterministic local rules engine fallback ensuring zero HTTP 500 errors on API timeouts or rate limits.
   - **Phase 4:** Implemented free, trigger-based telemetry ingestion from USGS and Open-Meteo with 5-second timeouts and 6-hour spatial deduplication.
   - **Phase 5:** Integrated tactical Leaflet GIS maps with pulsing threat markers, `[ SCAN PUBLIC FEEDS ]` control, manual incident reporting modal, and the slide-out `SitrepDossierDrawer`.
