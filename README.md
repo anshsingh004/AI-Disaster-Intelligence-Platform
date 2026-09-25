@@ -3,9 +3,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.124.x-009688.svg?style=flat&logo=FastAPI&logoColor=white)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-19.2.x-61DAFB.svg?style=flat&logo=React&logoColor=black)](https://react.dev)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1.svg?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org)
-[![Redis](https://img.shields.io/badge/Redis-7-DC382D.svg?style=flat&logo=redis&logoColor=white)](https://redis.io)
 [![Gemini](https://img.shields.io/badge/Google%20GenAI-Gemini%202.5%20Flash-blue.svg?style=flat&logo=google&logoColor=white)](https://ai.google.dev)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 An enterprise-grade, full-stack disaster detection, risk assessment, and geospatial intelligence platform. **Terra-Aura** correlates real-time environmental telemetry (USGS seismic feeds, Open-Meteo atmospheric readings, and sensor inputs), executes sub-second threat scoring, synthesizes structured tactical Situation Reports (SITREPs) using **Google Gemini 2.5 Flash** with an instant deterministic safety fallback, and renders an interactive geospatial command dashboard.
 
@@ -19,8 +17,6 @@ An enterprise-grade, full-stack disaster detection, risk assessment, and geospat
 - [Key Capabilities](#-key-capabilities)
 - [Roles & Clearance Levels](#-roles--clearance-levels)
 - [Technology Stack](#-technology-stack)
-- [Quickstart & Local Execution](#-quickstart--local-execution)
-- [Automated Testing & Verification](#-automated-testing--verification)
 - [Future Roadmap](#-future-roadmap)
 - [License](#-license)
 
@@ -171,79 +167,14 @@ sequenceDiagram
 
 ---
 
-## 🚀 Quickstart & Local Execution
 
-### 1. Prerequisites
-- Python 3.11+ (Python 3.13 verified)
-- Node.js 18+ & npm
-- PostgreSQL 14+ running locally or in Docker
-
-### 2. Configure Environment
-Copy the example environment file:
-```bash
-cp backend/.env.example backend/.env
-```
-Ensure your database connection string and optional Gemini API key are configured in `backend/.env`:
-```env
-ENV=development
-LOG_LEVEL=INFO
-DATABASE_URL=postgresql+psycopg2://postgres:password@localhost:5432/disaster_db
-GEMINI_API_KEY=your-gemini-api-key-here
-```
-
-### 3. Backend Setup
-```bash
-# Navigate to backend and install dependencies
-cd backend
-pip install -r requirements.txt
-
-# Run migrations and seed default dataset
-python -m alembic upgrade head
-python app/db_seeder.py
-
-# Launch FastAPI backend server
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-### 4. Frontend Setup
-```bash
-# In a new terminal, navigate to frontend and launch
-cd frontend
-npm install
-npm start
-```
-
-### 5. Access Endpoints
-- **Frontend Dashboard:** [http://localhost:3000](http://localhost:3000)
-- **Interactive API Docs (Swagger UI):** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-- **ReDoc Documentation:** [http://127.0.0.1:8000/redoc](http://127.0.0.1:8000/redoc)
-- **Readiness Probe:** [http://127.0.0.1:8000/readiness](http://127.0.0.1:8000/readiness)
-
----
-
-## 🧪 Automated Testing & Verification
-
-```bash
-# 1. Run full backend unit test suite (25 tests across Auth, Inference, LLM, Feeds)
-python -m unittest discover backend/tests
-
-# 2. Run frontend automated tests
-npm --prefix frontend test -- --watchAll=false
-
-# 3. Verify clean production build
-npm --prefix frontend run build
-```
-
----
-
-## 🗺 Future Roadmap
+## 🗺 Future Scope
 
 - **Phase 6: Multi-Sector Analytics & Intelligence Export:** Exporting 9-section SITREPs into cryptographically signed PDF briefs and GeoJSON spatial exports for external GIS tools (ArcGIS, QGIS).
 - **Phase 7: Real-Time WebSockets & Broadcast Alerts:** Dedicated streaming channel (`/api/v1/ws/alerts`) for instant multi-agency dispatch.
-- **Multi-Spectral Satellite Imagery:** Copernicus Sentinel-2 integration for thermal hotspot anomaly and flood inundation boundary overlays.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+All rights reserved.
