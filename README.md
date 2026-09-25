@@ -14,7 +14,6 @@ An enterprise-grade, full-stack disaster detection, risk assessment, and geospat
 - [STAR Engineering Executive Summary](#-star-engineering-executive-summary)
 - [System Architecture & Ingestion Flow](#-system-architecture--ingestion-flow)
 - [End-to-End User Interaction Flow](#-end-to-end-user-interaction-flow)
-- [Key Capabilities](#-key-capabilities)
 - [Roles & Clearance Levels](#-roles--clearance-levels)
 - [Technology Stack](#-technology-stack)
 - [Future Roadmap](#-future-roadmap)
